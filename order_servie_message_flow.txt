@@ -1,0 +1,8 @@
+CREATE
+1-verify shop with the current user
+2-verify all Product that belong to that shop and have a sufficient stocks
+3-finally add to orders
+
+UPDATE STATUS
+1-verify shop with the current user
+2-update order sts

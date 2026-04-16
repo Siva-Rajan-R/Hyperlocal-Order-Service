@@ -1,0 +1,2 @@
+SERVICE_NAME="orders"
+ENV_PREFIX="ORDERS_"
