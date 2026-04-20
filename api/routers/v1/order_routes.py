@@ -15,7 +15,7 @@ PG_SESSION=Annotated[AsyncSession,Depends(get_pg_async_session)]
 CURRENT_USER_ID=""
 SHOP_ID="812921c7-e107-51e2-b5b5-9d24957aad0f"
 
-@router.post('/')
+@router.post('')
 async def create(data:CreateOrderSchema,session:PG_SESSION):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).create(data=data)
 
@@ -31,7 +31,7 @@ async def delete(shop_id:str,order_id:str,session:PG_SESSION):
 
 
 @router.get('/{shop_id}')
-async def get_all(offset:int,shop_id:str,session:PG_SESSION,q:str=Query(""),limit:Optional[int]=Query(10),timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata):
+async def get_all(shop_id:str,session:PG_SESSION,q:str=Query(""),offset:int=Query(0),limit:Optional[int]=Query(10),timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).get(query=q,limit=limit,offset=offset,shop_id=shop_id,timezone=timezone)
 
 

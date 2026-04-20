@@ -11,7 +11,12 @@ class RabbitMQMessagingConfig:
 
     @staticmethod
     async def get_rabbitmq_connection()->RobustConnection:
-        connection=await connect_robust()
+        connection=await connect_robust(
+            host='89.167.72.254',
+            port=5672,
+            login="test",
+            password="test1234"
+        )
         return connection
     
     async def _get_channel(self):
