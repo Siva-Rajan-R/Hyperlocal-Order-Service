@@ -27,4 +27,4 @@ async def get_pg_async_session():
     try:
         yield Session
     finally:
-        await Session.close_all()
+        await Session.close()

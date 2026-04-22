@@ -13,7 +13,7 @@ router=APIRouter(
 
 PG_SESSION=Annotated[AsyncSession,Depends(get_pg_async_session)]
 CURRENT_USER_ID=""
-SHOP_ID="812921c7-e107-51e2-b5b5-9d24957aad0f"
+SHOP_ID="37d5519b-51a1-5854-982b-4d6524171017"
 
 @router.post('')
 async def create(data:CreateOrderSchema,session:PG_SESSION):
