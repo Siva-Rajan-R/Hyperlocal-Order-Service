@@ -7,8 +7,10 @@ from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
 from typing import Optional,List,Dict
 from core.errors.messaging_errors import BussinessError,FatalError,RetryableError
 from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,UpdateOrderStatusSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,DeleteOrderSchema
+from schemas.v1.response_schemas.user_schemas.order_schema import OrderGetResponseSchema,OrderCreateResponseSchema,OrderUpdateResponseSchema,OrderDeleteResponseSchema
 from hyperlocal_platform.core.models.req_res_models import ErrorResponseTypDict,SuccessResponseTypDict,BaseResponseTypDict
+
 from infras.caching.models.billing_model import BillingCacheModel,CachingBillingSchema
 
 class HandleOrderRequest:
@@ -20,51 +22,7 @@ class HandleOrderRequest:
 
         
     async def create(self,data:CreateOrderSchema):
-        cached_billing_data:Dict[str,dict]=await BillingCacheModel(shop_id=self.shop_id,cur_user_id=self.cur_user_id).get_billing_cache()
-        ic(data.orders,cached_billing_data)
-        
-        if not cached_billing_data or len(data.orders)!=len(cached_billing_data):
-            raise HTTPException(
-                status_code=404,
-                detail=ErrorResponseTypDict(
-                    status_code=404,
-                    msg="Error : Creating order",
-                    description="Billing was not initiated, or invalid Billing",
-                    success=False
-                )
-            )
-        ic(len(data.orders),len(cached_billing_data))
-        
-        total_amount:int=0
-        orders=[]
-        for product in data.orders:
-            product_info=cached_billing_data.get(product,None)
-            if not product_info:
-                raise HTTPException(
-                    status_code=404,
-                    detail=ErrorResponseTypDict(
-                        status_code=404,
-                        msg="Error : Creating Order",
-                        description="Billed product not found",
-                        success=False
-                    )
-                )
-            
-            total_amount+=product_info.get('total_price')
-            orders.append(
-                OrderItemValueTypDict(
-                    product_name=product_info.get('product_name'),
-                    barcode=product_info.get('barcode'),
-                    quantity=product_info.get('qty'),
-                    price=product_info.get('product_price'),
-                    total_price=product_info.get('total_price')
-                )
-            )
-
-        
-        data.total_price=total_amount
-        data.orders=orders
-        res=await OrdersService(session=self.session).create(data=data,cur_user_id=self.cur_user_id)
+        res=await OrdersService(session=self.session).create(data=data)
         if not res:
             raise HTTPException(
                 status_code=400,
@@ -76,16 +34,16 @@ class HandleOrderRequest:
                 )
             )
         
-        await BillingCacheModel(shop_id=self.shop_id,cur_user_id=self.cur_user_id).delete_billing_cache()
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=201,
                 msg="Order Created Successfully",
                 success=True
-            )
+            ),
+            data=OrderCreateResponseSchema(**res) if res else None
         )
     
-    async def update(self,data:UpdateOrderStatusSchema):
+    async def update(self,data:CreateOrderSchema):
         res=await OrdersService(session=self.session).update(data=data)
         if not res:
             raise HTTPException(
@@ -106,8 +64,8 @@ class HandleOrderRequest:
             )
         )
     
-    async def delete(self,shop_id:str,order_id:str):
-        res=await OrdersService(session=self.session).delete(shop_id=shop_id,order_id=order_id)
+    async def delete(self,data:DeleteOrderSchema):
+        res=await OrdersService(session=self.session).delete(data=data)
         if not res:
             raise HTTPException(
                     status_code=400,
@@ -124,29 +82,41 @@ class HandleOrderRequest:
                 status_code=200,
                 msg="Order deleted Successfully",
                 success=True
-            )
+            ),
+            data=OrderDeleteResponseSchema(**res) if res else None
         )
     
-    async def get(self,query:str,limit:int,offset:int,shop_id:str,timezone:TimeZoneEnum):
-        res=await OrdersService(session=self.session).get(limit=limit,timezone=timezone,shop_id=shop_id,offset=offset,query=query)
+    async def get(self,data:GetAllOrderSchema):
+        res=await OrdersService(session=self.session).get(data=data)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=res
+            data=[OrderGetResponseSchema(**r) for r in res] if res else []
         )
     
-    async def get_byid(self,shop_id:str,order_id:str,timezone:TimeZoneEnum):
-        res=await OrdersService(session=self.session).getby_id(timezone=timezone,shop_id=shop_id,order_id=order_id)
+    async def getby_shop_id(self,data:GetOrderByShopIdSchema):
+        res=await OrdersService(session=self.session).getby_shop_id(data=data)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=res
+            data=[OrderGetResponseSchema(**r) for r in res] if res else []
+        )
+    
+    async def get_byid(self,data:GetOrderByIdSchema):
+        res=await OrdersService(session=self.session).getby_id(data=data)
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                status_code=200,
+                success=True,
+                msg="Order fetched successfully"
+            ),
+            data=OrderGetResponseSchema(**res) if res else None
         )
     
     async def search(self,limit:int,shop_id:str,query:str=""):

@@ -1,6 +1,6 @@
-from ...handlers.ordrer_handler import HandleOrderRequest,CreateOrderSchema,UpdateOrderStatusSchema,Optional,List
+from ...handlers.ordrer_handler import HandleOrderRequest,CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema
 from fastapi import APIRouter,Depends,Query
-from typing import Annotated
+from typing import Annotated,Optional
 from infras.primary_db.main import get_pg_async_session,AsyncSession
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 
@@ -21,23 +21,28 @@ async def create(data:CreateOrderSchema,session:PG_SESSION):
 
 
 @router.put('/status')
-async def update_status(data:UpdateOrderStatusSchema,session:PG_SESSION):
+async def update_status(data:CreateOrderSchema,session:PG_SESSION):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).update(data=data)
 
 
 @router.delete('/{shop_id}/{order_id}')
-async def delete(shop_id:str,order_id:str,session:PG_SESSION):
-    return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).delete(shop_id=shop_id,order_id=order_id)
+async def delete(session:PG_SESSION,data:DeleteOrderSchema=Depends()):
+    return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).delete(data=data)
+
+
+@router.get('/')
+async def get_all(session:PG_SESSION,data:GetAllOrderSchema=Depends()):
+    return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).get(data=data)
 
 
 @router.get('/{shop_id}')
-async def get_all(shop_id:str,session:PG_SESSION,q:str=Query(""),offset:int=Query(0),limit:Optional[int]=Query(10),timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata):
-    return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).get(query=q,limit=limit,offset=offset,shop_id=shop_id,timezone=timezone)
+async def get_all(session:PG_SESSION,data:GetOrderByShopIdSchema=Depends()):
+    return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).getby_shop_id(data=data)
 
 
 @router.get('/{shop_id}/{order_id}')
-async def get_byid(session:PG_SESSION,shop_id:str,order_id:str,timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata):
-    return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).get_byid(shop_id=shop_id,order_id=order_id,timezone=timezone)
+async def get_byid(session:PG_SESSION,data:GetOrderByIdSchema=Depends()):
+    return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).get_byid(data=data)
 
 
 @router.get('/search/{shop_id}')

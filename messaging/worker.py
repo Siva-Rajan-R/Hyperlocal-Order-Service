@@ -1,5 +1,5 @@
 from .main import RabbitMQMessagingConfig,ExchangeType
-from .controllers.controller import ConsumersHandler
+from .controllers.service_controller import service_main_controller
 import asyncio
 
 async def worker():
@@ -8,7 +8,7 @@ async def worker():
 
     # Exchanges
     exchanges=[
-        {'name':'inventory.orders.orders.exchange','exc_type':ExchangeType.TOPIC}
+        {'name':'orders.service.exchange','exc_type':ExchangeType.DIRECT}
     ]
 
     for exchange in exchanges:
@@ -16,7 +16,7 @@ async def worker():
 
     # Queues
     queues=[
-        {'exc_name':'inventory.orders.orders.exchange','q_name':'inventory.orders.orders.queue','r_key':'inventory.orders.*.*.v1'},
+        {'exc_name':'orders.service.exchange','q_name':'orders.service.queue','r_key':'orders.serivce.routing.key'},
     ]
 
     for queue in queues:
@@ -28,7 +28,7 @@ async def worker():
 
     # Consumers
     consumers=[
-        {'q_name':'inventory.orders.orders.queue','handler':ConsumersHandler.main_handler}
+        {'q_name':'orders.service.queue','handler':service_main_controller}
     ]
 
     for consumer in consumers:

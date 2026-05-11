@@ -1,9 +1,9 @@
-from ..repos.order_repo import OrdersRepo
+from ..repos.order_repo import OrdersRepo,OrderItems
 from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from models.service_models.base_service_model import BaseServiceModel
-from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,UpdateOrderStatusDbSchema
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,UpdateOrderStatusSchema
+from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema
 from core.errors.messaging_errors import BussinessError,FatalError,RetryableError
 from hyperlocal_platform.core.utils.routingkey_builder import RoutingkeyActions,RoutingkeyState,RoutingkeyVersions,generate_routingkey
 from hyperlocal_platform.core.utils.uuid_generator import generate_uuid
@@ -13,30 +13,68 @@ from typing import Optional,List
 
 
 class OrdersService(BaseServiceModel):
-    async def create(self,data:CreateOrderSchema,cur_user_id:str):
+    async def create(self,data:CreateOrderSchema):
+
         order_id:str=generate_uuid()
-        repo_data=CreateOrderDbSchema(
-            **data.model_dump(mode='json',exclude_none=True,exclude_unset=True),
+        tot_qty=0
+        tot_buy_price=0
+        tot_sell_price=0
+
+        order_items_toadd=[]
+
+        for item in data.items:
+            tot_qty+=item.quantity
+            tot_buy_price+=item.buy_price
+            tot_sell_price+=item.sell_price
+
+            item_id=generate_uuid()
+            ic(item.model_dump())
+            item_toadd=OrderItemsDbSchema(
+                id=item_id,
+                order_id=order_id,
+                sku=generate_uuid(),
+                **item.model_dump()
+            )
+
+            order_items_toadd.append(OrderItems(**item_toadd.model_dump(exclude=['inv_serial_numbers']),serial_numbers=item_toadd.inv_serial_numbers))
+
+
+        order_toadd=CreateOrderDbSchema(
+            **data.model_dump(mode='json',exclude_none=True,exclude_unset=True,exclude=['items']),
             id=order_id,
-            order_by=cur_user_id
+            total_buyprice=tot_buy_price,
+            total_quantity=tot_qty,
+            total_sellprice=tot_sell_price
         )
-        return await OrdersRepo(session=self.session).create(data=repo_data)
+        order_res = await OrdersRepo(session=self.session).create(data=order_toadd)
+        if order_res:
+            item_res=await OrdersRepo(session=self.session).create_bulk_items(datas=order_items_toadd)
+        if not item_res:
+            order_res=None
+        
+        return order_res
     
 
-    async def update(self,data:UpdateOrderStatusSchema):
-        repo_data=UpdateOrderStatusDbSchema(
+    async def update(self,data:CreateOrderSchema):
+        repo_data=CreateOrderDbSchema(
             **data.model_dump(mode='json',exclude_unset=True,exclude_none=True)
         )
         return await OrdersRepo(session=self.session).update(data=repo_data)
     
-    async def delete(self,shop_id:str,order_id:str):
-        return await OrdersRepo(session=self.session).delete(order_id=order_id,shop_id=shop_id)
+    async def delete(self,data:DeleteOrderSchema):
+        return await OrdersRepo(session=self.session).delete(data=data)
     
-    async def get(self,limit:int,timezone:TimeZoneEnum,shop_id:str,offset:int=1,query:str=""):
-        return await OrdersRepo(session=self.session).get(limit=limit,offset=offset,shop_id=shop_id,timezone=timezone,query=query)
+    async def get(self,data:GetAllOrderSchema):
+        return await OrdersRepo(session=self.session).get(data=data)
+    
 
-    async def getby_id(self,timezone:TimeZoneEnum,shop_id:str,order_id:str):
-        return await OrdersRepo(session=self.session).getby_id(shop_id=shop_id,order_id=order_id,timezone=timezone)
+    async def getby_shop_id(self,data:GetOrderByShopIdSchema):
+        return await OrdersRepo(session=self.session).getby_shop_id(data=data)
+    
+    
+
+    async def getby_id(self,data:GetOrderByIdSchema):
+        return await OrdersRepo(session=self.session).getby_id(data=data)
     
     async def search(self,query:str,shop_id:str,limit:int=5):
         return await OrdersRepo(session=self.session).search(shop_id=shop_id,query=query,limit=limit)

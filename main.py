@@ -21,7 +21,7 @@ async def order_service_lifespan(app:FastAPI):
         await init_infra_db()
         await init_orders_pg_db()
         await check_redis_health()
-        # asyncio.create_task(worker())
+        asyncio.create_task(worker())
         yield
 
     except Exception as e:
