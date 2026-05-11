@@ -30,7 +30,7 @@ async def delete(session:PG_SESSION,data:DeleteOrderSchema=Depends()):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).delete(data=data)
 
 
-@router.get('/')
+@router.get('')
 async def get_all(session:PG_SESSION,data:GetAllOrderSchema=Depends()):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).get(data=data)
 
