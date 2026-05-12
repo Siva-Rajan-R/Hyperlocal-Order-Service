@@ -47,112 +47,109 @@ items_subq = (
 )
 
 
+exchange_group_subq = (
+    select(
+        ExchangedOrderItems.parent_order_id,
+        ExchangedOrderItems.replacement_order_id,
+
+        func.jsonb_agg(
+            ExchangedOrderItems.item_id
+        ).label("exchanged_item_ids"),
+
+        func.jsonb_build_object(
+            "id", replacement_order.id,
+            "ui_id", replacement_order.ui_id,
+            "shop_id", replacement_order.shop_id,
+            "origin", replacement_order.origin,
+            "status", replacement_order.status,
+            "payment_method", replacement_order.payment_method,
+            "customer_id", replacement_order.customer_id,
+            "total_buyprice", replacement_order.total_buyprice,
+            "total_sellprice", replacement_order.total_sellprice,
+            "total_quantity", replacement_order.total_quantity,
+            "type", replacement_order.type,
+            "created_at", replacement_order.created_at,
+            "updated_at", replacement_order.updated_at,
+
+            "items",
+            (
+                select(
+                    func.coalesce(
+                        func.jsonb_agg(
+                            func.jsonb_build_object(
+                                "id", replacement_order_item.id,
+                                "inventory_id", replacement_order_item.inventory_id,
+                                "variant_id", replacement_order_item.variant_id,
+                                "batch_id", replacement_order_item.batch_id,
+                                "serialno_id", replacement_order_item.serialno_id,
+                                "barcode", replacement_order_item.barcode,
+                                "buy_price", replacement_order_item.buy_price,
+                                "sell_price", replacement_order_item.sell_price,
+                                "quantity", replacement_order_item.quantity,
+                                "gst", replacement_order_item.gst,
+                                "status", replacement_order_item.status,
+                                "serial_numbers", replacement_order_item.serial_numbers,
+                                "created_at", replacement_order_item.created_at
+                            )
+                        ),
+                        func.cast("[]", JSONB)
+                    )
+                )
+                .where(
+                    replacement_order_item.order_id == replacement_order.id
+                )
+                .scalar_subquery()
+            )
+        ).label("replacement_order")
+
+    )
+    .outerjoin(
+        replacement_order,
+        replacement_order.id == ExchangedOrderItems.replacement_order_id
+    )
+    .group_by(
+        ExchangedOrderItems.parent_order_id,
+        ExchangedOrderItems.replacement_order_id,
+
+        replacement_order.id,
+        replacement_order.ui_id,
+        replacement_order.shop_id,
+        replacement_order.origin,
+        replacement_order.status,
+        replacement_order.payment_method,
+        replacement_order.customer_id,
+        replacement_order.total_buyprice,
+        replacement_order.total_sellprice,
+        replacement_order.total_quantity,
+        replacement_order.type,
+        replacement_order.created_at,
+        replacement_order.updated_at,
+    )
+).subquery()
+
+
 
 
 exchanged_items_subq = (
     select(
-        ExchangedOrderItems.parent_order_id,
+        exchange_group_subq.c.parent_order_id,
 
         func.coalesce(
             func.jsonb_agg(
                 func.jsonb_build_object(
-
-                    # --------------------------------
-                    # EXCHANGE ENTRY ID
-                    # --------------------------------
-
-                    "exchange_id",
-                    ExchangedOrderItems.id,
-
-                    # --------------------------------
-                    # ORIGINAL EXCHANGED ITEM ID
-                    # --------------------------------
-
-                    "exchanged_item_id",
-                    ExchangedOrderItems.item_id,
-
-                    # --------------------------------
-                    # REPLACEMENT ORDER
-                    # --------------------------------
-
                     "replacement_order",
+                    exchange_group_subq.c.replacement_order,
 
-                    func.jsonb_build_object(
-                        "id", replacement_order.id,
-                        "ui_id", replacement_order.ui_id,
-                        "shop_id", replacement_order.shop_id,
-                        "origin", replacement_order.origin,
-                        "status", replacement_order.status,
-                        "payment_method", replacement_order.payment_method,
-                        "customer_id", replacement_order.customer_id,
-                        "total_buyprice", replacement_order.total_buyprice,
-                        "total_sellprice", replacement_order.total_sellprice,
-                        "total_quantity", replacement_order.total_quantity,
-                        "type", replacement_order.type,
-                        "created_at", replacement_order.created_at,
-                        "updated_at", replacement_order.updated_at,
-
-                        # --------------------------------
-                        # REPLACEMENT ORDER ITEMS
-                        # --------------------------------
-
-                        "items",
-
-                        (
-                            select(
-                                func.coalesce(
-                                    func.jsonb_agg(
-                                        func.jsonb_build_object(
-                                            "id", replacement_order_item.id,
-                                            "inventory_id", replacement_order_item.inventory_id,
-                                            "variant_id", replacement_order_item.variant_id,
-                                            "batch_id", replacement_order_item.batch_id,
-                                            "serialno_id", replacement_order_item.serialno_id,
-                                            "barcode", replacement_order_item.barcode,
-                                            "buy_price", replacement_order_item.buy_price,
-                                            "sell_price", replacement_order_item.sell_price,
-                                            "quantity", replacement_order_item.quantity,
-                                            "gst", replacement_order_item.gst,
-                                            "status", replacement_order_item.status,
-                                            "serial_numbers", replacement_order_item.serial_numbers,
-                                            "created_at", replacement_order_item.created_at
-                                        )
-                                    ).filter(
-                                        replacement_order_item.id.isnot(None)
-                                    ),
-
-                                    func.cast("[]", JSONB)
-                                )
-                            )
-                            .where(
-                                replacement_order_item.order_id
-                                == replacement_order.id
-                            )
-                            .scalar_subquery()
-                        )
-                    )
-
+                    "exchanged_items",
+                    exchange_group_subq.c.exchanged_item_ids
                 )
-            ).filter(
-                ExchangedOrderItems.id.isnot(None)
             ),
-
             func.cast("[]", JSONB)
         ).label("exchanged_items")
-    )
 
-    .outerjoin(
-        replacement_order,
-        replacement_order.id
-        == ExchangedOrderItems.replacement_order_id
     )
-
-    .group_by(
-        ExchangedOrderItems.parent_order_id
-    )
-
-    .subquery()
-)
+    .group_by(exchange_group_subq.c.parent_order_id)
+).subquery()
 
 class OrdersRepo(BaseRepoModel):
     
