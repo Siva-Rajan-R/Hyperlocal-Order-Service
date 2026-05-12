@@ -1,9 +1,10 @@
 from ..repos.order_repo import OrdersRepo,OrderItems
-from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum
+from ..models.order_model import ExchangedOrderItems
+from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum,OrderReturnTypeEnum
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from models.service_models.base_service_model import BaseServiceModel
-from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema
+from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema,UpdateOrderDbSchema,UpdateOrderItemDbSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema,ExchangeOrderSchema,OrderItemsSchema
 from core.errors.messaging_errors import BussinessError,FatalError,RetryableError
 from hyperlocal_platform.core.utils.routingkey_builder import RoutingkeyActions,RoutingkeyState,RoutingkeyVersions,generate_routingkey
 from hyperlocal_platform.core.utils.uuid_generator import generate_uuid
@@ -13,7 +14,7 @@ from typing import Optional,List
 
 
 class OrdersService(BaseServiceModel):
-    async def create(self,data:CreateOrderSchema):
+    async def create(self,data:CreateOrderSchema,type:Optional[str]="NORMAL"):
 
         order_id:str=generate_uuid()
         tot_qty=0
@@ -33,8 +34,12 @@ class OrdersService(BaseServiceModel):
                 id=item_id,
                 order_id=order_id,
                 sku=generate_uuid(),
-                **item.model_dump()
+                **item.model_dump(),
+                status=OrderStatusEnum.COMPLETED,
+                
             )
+
+            ic(item_toadd)
 
             order_items_toadd.append(OrderItems(**item_toadd.model_dump(exclude=['inv_serial_numbers']),serial_numbers=item_toadd.inv_serial_numbers))
 
@@ -44,8 +49,10 @@ class OrdersService(BaseServiceModel):
             id=order_id,
             total_buyprice=tot_buy_price,
             total_quantity=tot_qty,
-            total_sellprice=tot_sell_price
+            total_sellprice=tot_sell_price,
+            type=type
         )
+        ic(order_items_toadd)
         order_res = await OrdersRepo(session=self.session).create(data=order_toadd)
         if order_res:
             item_res=await OrdersRepo(session=self.session).create_bulk_items(datas=order_items_toadd)
@@ -61,6 +68,37 @@ class OrdersService(BaseServiceModel):
         )
         return await OrdersRepo(session=self.session).update(data=repo_data)
     
+
+    async def return_order(self,data:ReturnOrderSchema):
+        return await OrdersRepo(session=self.session).update_order_item(data=UpdateOrderItemDbSchema(id=data.item_id,order_id=data.id,status=OrderStatusEnum.REFUNDED))
+    
+    async def exchange_order(self,data:ExchangeOrderSchema)-> bool | None:
+        data_toadd=CreateOrderSchema(
+            shop_id=data.shop_id,
+            customer_id=data.customer_id,
+            status=OrderStatusEnum.COMPLETED,
+            payment_method=data.payment_method,
+            origin=OrderOriginEnum.OFFLINE,
+            items=[data.items]
+        )
+        res=await self.create(data=data_toadd,type="EXCHANGE")
+        if not res:
+            return res
+        
+        exchange_item_toadd=ExchangedOrderItems(
+            id=generate_uuid(),
+            item_id=data.item_id,
+            parent_order_id=data.order_id,
+            replacement_order_id=res['id']
+        )
+
+        await OrdersRepo(session=self.session).update_order_item(data=UpdateOrderItemDbSchema(id=data.item_id,order_id=data.order_id,status=OrderStatusEnum.EXCHANGED))
+        self.session.add(exchange_item_toadd)
+        await self.session.commit()
+
+        return True
+        
+
     async def delete(self,data:DeleteOrderSchema):
         return await OrdersRepo(session=self.session).delete(data=data)
     

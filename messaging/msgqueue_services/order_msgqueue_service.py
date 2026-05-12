@@ -1,6 +1,6 @@
 from infras.primary_db.services.order_service import OrdersService
 from models.service_models.base_service_model import BaseServiceModel
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema,ExchangeOrderSchema
 from schemas.v1.response_schemas.msgqueue_schemas.order_schema import OrderGetResponseSchema,OrderCreateResponseSchema,OrderItemsResponseSchema,OrderDeleteResponseSchema,OrderUpdateResponseSchema
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
 from fastapi.exceptions import HTTPException
@@ -25,8 +25,28 @@ class MessagingQueueOrderService:
                 return res
 
             return OrderCreateResponseSchema(**res).model_dump(mode="json") if res else None
-            
         
+    
+    async def return_order(self,data:Union[ReturnOrderSchema,dict]):
+        if isinstance(data, dict):
+            data = ReturnOrderSchema(**data)
+
+        async with AsyncOrdersLocalSession() as session:
+            order_service_obj=OrdersService(session=session)
+            res=await order_service_obj.return_order(data=data)
+            
+            return res
+
+
+    async def exchange_order(self,data:Union[ExchangeOrderSchema,dict]):
+        if isinstance(data, dict):
+            data = ExchangeOrderSchema(**data)
+
+        async with AsyncOrdersLocalSession() as session:
+            order_service_obj=OrdersService(session=session)
+            res=await order_service_obj.exchange_order(data=data)
+            
+            return res
 
     async def delete_order(self,data:Union[DeleteOrderSchema,dict]):
         if isinstance(data, dict):

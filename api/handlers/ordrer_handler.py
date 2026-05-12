@@ -7,7 +7,7 @@ from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
 from typing import Optional,List,Dict
 from core.errors.messaging_errors import BussinessError,FatalError,RetryableError
 from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,DeleteOrderSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,DeleteOrderSchema,ReturnOrderSchema,ExchangeOrderSchema
 from schemas.v1.response_schemas.user_schemas.order_schema import OrderGetResponseSchema,OrderCreateResponseSchema,OrderUpdateResponseSchema,OrderDeleteResponseSchema
 from hyperlocal_platform.core.models.req_res_models import ErrorResponseTypDict,SuccessResponseTypDict,BaseResponseTypDict
 
@@ -64,6 +64,52 @@ class HandleOrderRequest:
             )
         )
     
+
+    async def return_order(self,data:ReturnOrderSchema):
+        res=await OrdersService(session=self.session).return_order(data=data)
+        ic(res)
+        if not res:
+            raise HTTPException(
+                    status_code=400,
+                    detail=ErrorResponseTypDict(
+                        status_code=400,
+                        msg="Error : Updating order",
+                        description="Invalid Data for order",
+                        success=False
+                    )
+                )
+        
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                status_code=200,
+                msg="Order Updated Successfully",
+                success=True
+            )
+        )
+    
+
+    async def exchange_order(self,data:ExchangeOrderSchema):
+        res=await OrdersService(session=self.session).exchange_order(data=data)
+        ic(res)
+        if not res:
+            raise HTTPException(
+                    status_code=400,
+                    detail=ErrorResponseTypDict(
+                        status_code=400,
+                        msg="Error : Updating order",
+                        description="Invalid Data for order",
+                        success=False
+                    )
+                )
+        
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                status_code=200,
+                msg="Order Updated Successfully",
+                success=True
+            )
+        )
+        
     async def delete(self,data:DeleteOrderSchema):
         res=await OrdersService(session=self.session).delete(data=data)
         if not res:
@@ -88,6 +134,7 @@ class HandleOrderRequest:
     
     async def get(self,data:GetAllOrderSchema):
         res=await OrdersService(session=self.session).get(data=data)
+        ic(res)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,

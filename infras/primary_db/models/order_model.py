@@ -14,6 +14,7 @@ class Orders(BASE):
     customer_id=Column(String,nullable=True)
     status=Column(String,nullable=False)
     origin=Column(String,nullable=False)
+    type=Column(String,nullable=True)
     payment_method=Column(String,nullable=False)
 
     created_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now())
@@ -40,6 +41,19 @@ class OrderItems(BASE):
 
     quantity=Column(BigInteger,nullable=False)
 
+    status=Column(String,nullable=False)
+    created_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now())
+    updated_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now(),onupdate=func.now())
+
+
+
+class ExchangedOrderItems(BASE):
+    __tablename__="exchanged_order_items"
+    id=Column(String,primary_key=True)
+
+    parent_order_id=Column(String,nullable=False)
+    item_id=Column(String,nullable=False)
+    replacement_order_id =Column(String,nullable=False)
 
     created_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now())
     updated_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now(),onupdate=func.now())

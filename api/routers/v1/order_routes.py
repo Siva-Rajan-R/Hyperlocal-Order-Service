@@ -1,4 +1,5 @@
-from ...handlers.ordrer_handler import HandleOrderRequest,CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema
+from ...handlers.ordrer_handler import HandleOrderRequest,CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ExchangeOrderSchema
+from schemas.v1.request_scheams.order_schema import ReturnOrderSchema
 from fastapi import APIRouter,Depends,Query
 from typing import Annotated,Optional
 from infras.primary_db.main import get_pg_async_session,AsyncSession
@@ -23,6 +24,15 @@ async def create(data:CreateOrderSchema,session:PG_SESSION):
 @router.put('/status')
 async def update_status(data:CreateOrderSchema,session:PG_SESSION):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).update(data=data)
+
+@router.put('/exchange')
+async def exchange_order(data:ExchangeOrderSchema,session:PG_SESSION):
+    return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).exchange_order(data=data)
+
+
+@router.put('/return')
+async def return_order(data:ReturnOrderSchema,session:PG_SESSION):
+    return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).return_order(data=data)
 
 
 @router.delete('/{shop_id}/{order_id}')
