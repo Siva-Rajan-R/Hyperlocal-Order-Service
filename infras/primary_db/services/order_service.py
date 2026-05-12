@@ -3,8 +3,8 @@ from ..models.order_model import ExchangedOrderItems
 from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum,OrderReturnTypeEnum
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from models.service_models.base_service_model import BaseServiceModel
-from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema,UpdateOrderDbSchema,UpdateOrderItemDbSchema
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema,ExchangeOrderSchema,OrderItemsSchema
+from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema,UpdateOrderDbSchema,UpdateOrderItemDbSchema,ReturnBulkOrderDbSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema,ExchangeOrderSchema,OrderItemsSchema,ReturnBulkOrderSchema,ExchangeBulkOrderSchema
 from core.errors.messaging_errors import BussinessError,FatalError,RetryableError
 from hyperlocal_platform.core.utils.routingkey_builder import RoutingkeyActions,RoutingkeyState,RoutingkeyVersions,generate_routingkey
 from hyperlocal_platform.core.utils.uuid_generator import generate_uuid
@@ -72,6 +72,15 @@ class OrdersService(BaseServiceModel):
     async def return_order(self,data:ReturnOrderSchema):
         return await OrdersRepo(session=self.session).update_order_item(data=UpdateOrderItemDbSchema(id=data.item_id,order_id=data.id,status=OrderStatusEnum.REFUNDED))
     
+    async def return_order_bulk(self,data:ReturnBulkOrderSchema):
+
+        res=await OrdersRepo(session=self.session).update_order_item_bulk(data=ReturnBulkOrderDbSchema(**data.model_dump(),status=OrderStatusEnum.REFUNDED.value))
+
+        if len(data.items_id)!=len(res):
+            return False
+        
+        return True
+    
     async def exchange_order(self,data:ExchangeOrderSchema)-> bool | None:
         data_toadd=CreateOrderSchema(
             shop_id=data.shop_id,
@@ -94,6 +103,41 @@ class OrdersService(BaseServiceModel):
 
         await OrdersRepo(session=self.session).update_order_item(data=UpdateOrderItemDbSchema(id=data.item_id,order_id=data.order_id,status=OrderStatusEnum.EXCHANGED))
         self.session.add(exchange_item_toadd)
+        await self.session.commit()
+
+        return True
+    
+
+    async def exchange_bulk_order(self,data:ExchangeBulkOrderSchema)-> bool | None:
+        data_toadd=CreateOrderSchema(
+            shop_id=data.shop_id,
+            customer_id=data.customer_id,
+            status=OrderStatusEnum.COMPLETED,
+            payment_method=data.payment_method,
+            origin=OrderOriginEnum.OFFLINE,
+            items=data.items
+        )
+
+        
+
+        res=await self.create(data=data_toadd,type="EXCHANGE")
+        if not res:
+            return res
+        
+        exchange_order_items_toadd=[]
+        for item_id in data.items_id:
+            formatted_data=ExchangedOrderItems(
+                id=generate_uuid(),
+                item_id=item_id,
+                parent_order_id=data.order_id,
+                replacement_order_id=res['id']
+            )
+
+            exchange_order_items_toadd.append(formatted_data)
+
+        # await OrdersRepo(session=self.session).update_order_item(data=UpdateOrderItemDbSchema(id=data.item_id,order_id=data.order_id,status=OrderStatusEnum.EXCHANGED))
+        await OrdersRepo(session=self.session).update_order_item_bulk(data=ReturnBulkOrderDbSchema(id=data.order_id,items_id=data.items_id,status=OrderStatusEnum.EXCHANGED))
+        self.session.add_all(exchange_order_items_toadd)
         await self.session.commit()
 
         return True

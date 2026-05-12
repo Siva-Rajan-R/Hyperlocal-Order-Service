@@ -1,6 +1,6 @@
 from infras.primary_db.services.order_service import OrdersService
 from models.service_models.base_service_model import BaseServiceModel
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema,ExchangeOrderSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema,ExchangeOrderSchema,ReturnBulkOrderSchema,ExchangeBulkOrderSchema
 from schemas.v1.response_schemas.msgqueue_schemas.order_schema import OrderGetResponseSchema,OrderCreateResponseSchema,OrderItemsResponseSchema,OrderDeleteResponseSchema,OrderUpdateResponseSchema
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict,ErrorResponseTypDict,BaseResponseTypDict
 from fastapi.exceptions import HTTPException
@@ -36,6 +36,17 @@ class MessagingQueueOrderService:
             res=await order_service_obj.return_order(data=data)
             
             return res
+        
+
+    async def return_order_bulk(self,data:Union[ReturnBulkOrderSchema,dict]):
+        if isinstance(data, dict):
+            data = ReturnBulkOrderSchema(**data)
+
+        async with AsyncOrdersLocalSession() as session:
+            order_service_obj=OrdersService(session=session)
+            res=await order_service_obj.return_order_bulk(data=data)
+            
+            return res
 
 
     async def exchange_order(self,data:Union[ExchangeOrderSchema,dict]):
@@ -45,6 +56,16 @@ class MessagingQueueOrderService:
         async with AsyncOrdersLocalSession() as session:
             order_service_obj=OrdersService(session=session)
             res=await order_service_obj.exchange_order(data=data)
+            
+            return res
+        
+    async def exchange_order_bulk(self,data:Union[ExchangeBulkOrderSchema,dict]):
+        if isinstance(data, dict):
+            data = ExchangeBulkOrderSchema(**data)
+
+        async with AsyncOrdersLocalSession() as session:
+            order_service_obj=OrdersService(session=session)
+            res=await order_service_obj.exchange_bulk_order(data=data)
             
             return res
 

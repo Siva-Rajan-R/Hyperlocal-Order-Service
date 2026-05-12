@@ -1,11 +1,11 @@
 from models.repo_models.base_repo_model import BaseRepoModel
 from sqlalchemy.dialects.postgresql import Insert,JSONB
-from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema,UpdateOrderDbSchema,UpdateOrderItemDbSchema
-from schemas.v1.request_scheams.order_schema import DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema
+from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema,UpdateOrderDbSchema,UpdateOrderItemDbSchema,ReturnBulkOrderDbSchema
+from schemas.v1.request_scheams.order_schema import DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema,ReturnBulkOrderSchema,ExchangeBulkOrderSchema
 from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_transaction
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from ..models.order_model import Orders,OrderItems,ExchangedOrderItems
-from sqlalchemy import select,update,delete,func,or_,and_,String
+from sqlalchemy import select,update,delete,func,or_,and_,String,bindparam
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 from icecream import ic
@@ -246,10 +246,33 @@ class OrdersRepo(BaseRepoModel):
             OrderItems.order_id==data.order_id
         ).values(
             **data_toupdate
+        ).returning(OrderItems.id)
+
+        is_updated=(await self.session.execute(order_sts_toupdate)).scalar_one_or_none()
+        return is_updated
+    
+
+    @start_db_transaction
+    async def update_order_item_bulk(self,data:ReturnBulkOrderDbSchema):
+
+        if not data.items_id:
+            return []
+
+        stmt = (
+            update(OrderItems)
+            .where(
+                OrderItems.order_id == data.id,
+                OrderItems.id.in_(data.items_id)
+            )
+            .values(
+                status=data.status
+            )
+            .returning(OrderItems.id)
         )
 
-        is_updated=(await self.session.execute(order_sts_toupdate))
-        return is_updated
+        res = await self.session.execute(stmt)
+        ic(res)
+        return res.scalars().all()
 
 
     @start_db_transaction

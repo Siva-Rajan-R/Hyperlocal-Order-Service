@@ -58,6 +58,12 @@ class ReturnOrderSchema(BaseModel):
     id:str
     item_id:str
 
+
+class ReturnBulkOrderSchema(BaseModel):
+    id:str
+    items_id:List[str]
+
+
 class ExchangeOrderSchema(BaseModel):
     shop_id:str
     customer_id:str
@@ -65,3 +71,11 @@ class ExchangeOrderSchema(BaseModel):
     item_id:str
     payment_method:str
     items:OrderItemsSchema
+
+class ExchangeBulkOrderSchema(BaseModel):
+    shop_id:str
+    customer_id:str
+    order_id:str
+    items_id:List[str]
+    payment_method:str
+    items:List[OrderItemsSchema]

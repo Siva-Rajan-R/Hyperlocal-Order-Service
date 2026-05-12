@@ -47,3 +47,8 @@ class UpdateOrderItemDbSchema(BaseModel):
     id:str
     order_id:str
     status:Optional[OrderStatusEnum]=None
+
+class ReturnBulkOrderDbSchema(BaseModel):
+    id:str
+    items_id:List[str]
+    status:str
