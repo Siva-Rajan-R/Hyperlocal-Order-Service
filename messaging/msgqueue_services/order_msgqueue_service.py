@@ -60,6 +60,7 @@ class MessagingQueueOrderService:
             return res
         
     async def exchange_order_bulk(self,data:Union[ExchangeBulkOrderSchema,dict]):
+        ic(data)
         if isinstance(data, dict):
             data = ExchangeBulkOrderSchema(**data)
 

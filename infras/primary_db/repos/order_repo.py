@@ -33,6 +33,8 @@ items_subq = (
                     "sell_price", OrderItems.sell_price,
                     "quantity", OrderItems.quantity,
                     "gst", OrderItems.gst,
+                    "reason",OrderItems.reason,
+                    "datas",OrderItems.datas,
                     "status",OrderItems.status,
                     "serial_numbers", OrderItems.serial_numbers,
                     "created_at", OrderItems.created_at
@@ -88,6 +90,8 @@ exchange_group_subq = (
                                 "quantity", replacement_order_item.quantity,
                                 "gst", replacement_order_item.gst,
                                 "status", replacement_order_item.status,
+                                "reason", replacement_order_item.reason,
+                                "datas", replacement_order_item.datas,
                                 "serial_numbers", replacement_order_item.serial_numbers,
                                 "created_at", replacement_order_item.created_at
                             )
@@ -167,6 +171,7 @@ class OrdersRepo(BaseRepoModel):
             Orders.total_sellprice,
             Orders.total_quantity,
             Orders.type,
+            Orders.datas,
             Orders.created_at,
             Orders.updated_at,
             

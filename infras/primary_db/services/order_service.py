@@ -25,8 +25,8 @@ class OrdersService(BaseServiceModel):
 
         for item in data.items:
             tot_qty+=item.quantity
-            tot_buy_price+=item.buy_price
-            tot_sell_price+=item.sell_price
+            tot_buy_price+=item.buy_price*item.quantity
+            tot_sell_price+=item.sell_price*item.quantity
 
             item_id=generate_uuid()
             ic(item.model_dump())

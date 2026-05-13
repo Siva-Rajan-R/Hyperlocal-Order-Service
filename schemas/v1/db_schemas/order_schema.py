@@ -16,6 +16,8 @@ class OrderItemsDbSchema(BaseModel):
     inv_serial_numbers:Optional[List[str]]=None
     buy_price:float
     sell_price:float
+    reason:Optional[str]=None
+    datas:Optional[dict]=None
     status:OrderStatusEnum
     gst:Optional[str]=None
     quantity:int
@@ -30,6 +32,7 @@ class CreateOrderDbSchema(BaseModel):
     payment_method:str
     status:OrderStatusEnum
     origin:OrderOriginEnum
+    datas:Optional[dict]=None
     type:Optional[str]='NORMAL'
 
 class UpdateOrderDbSchema(BaseModel):

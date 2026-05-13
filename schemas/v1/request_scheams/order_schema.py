@@ -15,6 +15,8 @@ class OrderItemsSchema(BaseModel):
     inv_serial_numbers:Optional[List[str]]=None
     buy_price:float
     sell_price:float
+    reason:Optional[str]=None
+    datas:Optional[dict]=None
     gst:Optional[str]=None
     quantity:int
 
@@ -23,6 +25,7 @@ class CreateOrderSchema(BaseModel):
     customer_id:str
     status:OrderStatusEnum
     payment_method:str
+    datas:Optional[dict]=None
     origin:OrderOriginEnum
     items:List[OrderItemsSchema]
 

@@ -16,7 +16,7 @@ class Orders(BASE):
     origin=Column(String,nullable=False)
     type=Column(String,nullable=True)
     payment_method=Column(String,nullable=False)
-
+    datas=Column(JSONB,nullable=True)
     created_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now())
     updated_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now(),onupdate=func.now())
 
@@ -42,6 +42,8 @@ class OrderItems(BASE):
     quantity=Column(BigInteger,nullable=False)
 
     status=Column(String,nullable=False)
+    reason=Column(String,nullable=True)
+    datas=Column(JSONB,nullable=True)
     created_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now())
     updated_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now(),onupdate=func.now())
 

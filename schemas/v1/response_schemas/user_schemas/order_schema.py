@@ -14,6 +14,8 @@ class OrderItemsResponseSchema(BaseModel):
     barcode:Optional[str]=None
     serialno_id:Optional[str]=None
     serial_numbers:Optional[List[str]]=None
+    reason:Optional[str]=None
+    datas:Optional[dict]=None
     buy_price:float
     sell_price:float
     status:OrderStatusEnum
@@ -28,6 +30,8 @@ class OrderCreateResponseSchema(BaseModel):
     customer_id:str
     status:OrderStatusEnum
     type:str
+    
+    datas:Optional[dict]=None
     payment_method:str
     total_quantity:int
     total_buyprice:float
@@ -46,6 +50,8 @@ class OrderUpdateResponseSchema(BaseModel):
     shop_id:str
     customer_id:str
     type:str
+    
+    datas:Optional[dict]=None
     total_quantity:int
     payment_method:str
     total_buyprice:float
@@ -62,6 +68,8 @@ class OrderDeleteResponseSchema(BaseModel):
     ui_id:int
     shop_id:str
     type:str
+    
+    datas:Optional[dict]=None
     customer_id:str
     total_quantity:int
     payment_method:str
@@ -81,6 +89,8 @@ class OrderGetResponseSchema(BaseModel):
     total_quantity:int
     payment_method:str
     type:str
+    
+    datas:Optional[dict]=None
     total_buyprice:float
     total_sellprice:float
     customer_id:str
