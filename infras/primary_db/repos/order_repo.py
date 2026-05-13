@@ -1,7 +1,7 @@
 from models.repo_models.base_repo_model import BaseRepoModel
 from sqlalchemy.dialects.postgresql import Insert,JSONB
 from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema,UpdateOrderDbSchema,UpdateOrderItemDbSchema,ReturnBulkOrderDbSchema
-from schemas.v1.request_scheams.order_schema import DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema,ReturnBulkOrderSchema,ExchangeBulkOrderSchema
+from schemas.v1.request_scheams.order_schema import DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema,ReturnBulkOrderSchema,ExchangeBulkOrderSchema,GetOrderByCustomerIdSchema
 from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_transaction
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from ..models.order_model import Orders,OrderItems,ExchangedOrderItems
@@ -359,6 +359,49 @@ class OrdersRepo(BaseRepoModel):
             )
             .where(
                 Orders.shop_id==data.shop_id,
+                Orders.type!="EXCHANGE",
+                or_(
+                    Orders.id.ilike(search_term),
+                    func.cast(Orders.created_at,String).ilike(search_term),
+                    Orders.origin.ilike(search_term),
+                    Orders.status.ilike(search_term),
+                    Orders.shop_id.ilike(search_term)
+                ),
+            )
+            .offset(offset=cursor).limit(data.limit))
+
+        orders=(await self.session.execute(order_stmt)).mappings().all()
+
+        return orders
+    
+
+    async def getby_customer_id(self,data:GetOrderByCustomerIdSchema)-> List[dict] | list:
+        offset=data.offset
+        if offset<=0:
+            offset=1
+        cursor=(offset-1)*data.limit
+        search_term=f"%{data.query}%"
+        ic(data.shop_id)
+        created_at=func.date(func.timezone(data.timezone.value,Orders.created_at))
+
+        order_stmt=(
+            select(
+                *self.order_cols,
+
+                items_subq.c["items"].label("items"),
+                exchanged_items_subq.c["exchanged_items"].label("exchanged_items")
+            )
+            .outerjoin(
+                items_subq,
+                items_subq.c.order_id == Orders.id
+            )
+            .outerjoin(
+                    exchanged_items_subq,
+                    exchanged_items_subq.c.parent_order_id == Orders.id
+            )
+            .where(
+                Orders.shop_id==data.shop_id,
+                Orders.customer_id==data.customer_id,
                 Orders.type!="EXCHANGE",
                 or_(
                     Orders.id.ilike(search_term),

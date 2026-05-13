@@ -7,7 +7,7 @@ from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
 from typing import Optional,List,Dict
 from core.errors.messaging_errors import BussinessError,FatalError,RetryableError
 from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,DeleteOrderSchema,ReturnOrderSchema,ExchangeOrderSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,DeleteOrderSchema,ReturnOrderSchema,ExchangeOrderSchema,GetOrderByCustomerIdSchema
 from schemas.v1.response_schemas.user_schemas.order_schema import OrderGetResponseSchema,OrderCreateResponseSchema,OrderUpdateResponseSchema,OrderDeleteResponseSchema
 from hyperlocal_platform.core.models.req_res_models import ErrorResponseTypDict,SuccessResponseTypDict,BaseResponseTypDict
 
@@ -146,6 +146,17 @@ class HandleOrderRequest:
     
     async def getby_shop_id(self,data:GetOrderByShopIdSchema):
         res=await OrdersService(session=self.session).getby_shop_id(data=data)
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                status_code=200,
+                success=True,
+                msg="Order fetched successfully"
+            ),
+            data=[OrderGetResponseSchema(**r) for r in res] if res else []
+        )
+    
+    async def getby_customer_id(self,data:GetOrderByCustomerIdSchema):
+        res=await OrdersService(session=self.session).getby_customer_id(data=data)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,

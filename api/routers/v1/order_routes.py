@@ -1,4 +1,4 @@
-from ...handlers.ordrer_handler import HandleOrderRequest,CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ExchangeOrderSchema
+from ...handlers.ordrer_handler import HandleOrderRequest,CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ExchangeOrderSchema,GetOrderByCustomerIdSchema
 from schemas.v1.request_scheams.order_schema import ReturnOrderSchema
 from fastapi import APIRouter,Depends,Query
 from typing import Annotated,Optional
@@ -49,6 +49,10 @@ async def get_all(session:PG_SESSION,data:GetAllOrderSchema=Depends()):
 async def get_all(session:PG_SESSION,data:GetOrderByShopIdSchema=Depends()):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).getby_shop_id(data=data)
 
+
+@router.get('/by/customer/{shop_id}/{customer_id}')
+async def get_by_customer(session:PG_SESSION,data:GetOrderByCustomerIdSchema=Depends()):
+    return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).getby_customer_id(data=data)
 
 @router.get('/{shop_id}/{order_id}')
 async def get_byid(session:PG_SESSION,data:GetOrderByIdSchema=Depends()):

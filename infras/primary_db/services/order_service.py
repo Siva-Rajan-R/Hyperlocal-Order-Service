@@ -4,7 +4,7 @@ from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum,O
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from models.service_models.base_service_model import BaseServiceModel
 from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema,UpdateOrderDbSchema,UpdateOrderItemDbSchema,ReturnBulkOrderDbSchema
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema,ExchangeOrderSchema,OrderItemsSchema,ReturnBulkOrderSchema,ExchangeBulkOrderSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema,ExchangeOrderSchema,OrderItemsSchema,ReturnBulkOrderSchema,ExchangeBulkOrderSchema,GetOrderByCustomerIdSchema
 from core.errors.messaging_errors import BussinessError,FatalError,RetryableError
 from hyperlocal_platform.core.utils.routingkey_builder import RoutingkeyActions,RoutingkeyState,RoutingkeyVersions,generate_routingkey
 from hyperlocal_platform.core.utils.uuid_generator import generate_uuid
@@ -152,6 +152,9 @@ class OrdersService(BaseServiceModel):
 
     async def getby_shop_id(self,data:GetOrderByShopIdSchema):
         return await OrdersRepo(session=self.session).getby_shop_id(data=data)
+    
+    async def getby_customer_id(self,data:GetOrderByCustomerIdSchema):
+        return await OrdersRepo(session=self.session).getby_customer_id(data=data)
     
     
 

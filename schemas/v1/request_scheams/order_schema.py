@@ -51,6 +51,15 @@ class GetOrderByShopIdSchema(BaseModel):
     timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata
 
 
+class GetOrderByCustomerIdSchema(BaseModel):
+    shop_id:str
+    customer_id:str
+    query:Optional[str]=Field(default="",alias='q')
+    limit:Optional[int]=Field(default=10,le=100)
+    offset:int=Field(default=1)
+    timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata
+
+
 class GetOrderByIdSchema(BaseModel):
     id:str
     shop_id:str
