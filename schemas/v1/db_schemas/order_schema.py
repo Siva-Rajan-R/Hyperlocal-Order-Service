@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from core.data_formats.enums.order_enum import OrderStatusEnum,OrderOriginEnum
+from core.data_formats.enums.order_enum import OrderStatusEnum,OrderOriginEnum,OrderPaymentEnums
 from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
 from typing import Optional,List,Dict
 
@@ -29,7 +29,7 @@ class CreateOrderDbSchema(BaseModel):
     total_sellprice:int
     total_buyprice:int
     customer_id:str
-    payment_method:str
+    payments:Dict[OrderPaymentEnums,float]
     status:OrderStatusEnum
     origin:OrderOriginEnum
     datas:Optional[dict]=None
@@ -41,7 +41,7 @@ class UpdateOrderDbSchema(BaseModel):
     total_quantity:Optional[int]=None
     total_sellprice:Optional[int]=None
     total_buyprice:Optional[int]=None
-    payment_method:Optional[str]=None
+    
     status:Optional[OrderStatusEnum]=None
     origin:Optional[OrderOriginEnum]=None
 

@@ -15,7 +15,7 @@ class Orders(BASE):
     status=Column(String,nullable=False)
     origin=Column(String,nullable=False)
     type=Column(String,nullable=True)
-    payment_method=Column(String,nullable=False)
+    payments=Column(JSONB,nullable=False)
     datas=Column(JSONB,nullable=True)
     created_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now())
     updated_at=Column(TIMESTAMP(timezone=True),nullable=False,server_default=func.now(),onupdate=func.now())

@@ -1,5 +1,5 @@
 from pydantic import BaseModel,Field
-from core.data_formats.enums.order_enum import OrderStatusEnum,OrderOriginEnum,OrderReturnTypeEnum
+from core.data_formats.enums.order_enum import OrderStatusEnum,OrderOriginEnum,OrderReturnTypeEnum,OrderPaymentEnums
 from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
 from typing import Optional,List,Dict
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -24,7 +24,7 @@ class CreateOrderSchema(BaseModel):
     shop_id:str
     customer_id:str
     status:OrderStatusEnum
-    payment_method:str
+    payments:Dict[OrderPaymentEnums,float]
     datas:Optional[dict]=None
     origin:OrderOriginEnum
     items:List[OrderItemsSchema]
@@ -81,7 +81,7 @@ class ExchangeOrderSchema(BaseModel):
     customer_id:str
     order_id:str
     item_id:str
-    payment_method:str
+    payments:str
     items:OrderItemsSchema
 
 class ExchangeBulkOrderSchema(BaseModel):
@@ -89,5 +89,5 @@ class ExchangeBulkOrderSchema(BaseModel):
     customer_id:str
     order_id:str
     items_id:List[str]
-    payment_method:str
+    payments:str
     items:List[OrderItemsSchema]

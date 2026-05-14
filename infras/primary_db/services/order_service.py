@@ -86,7 +86,7 @@ class OrdersService(BaseServiceModel):
             shop_id=data.shop_id,
             customer_id=data.customer_id,
             status=OrderStatusEnum.COMPLETED,
-            payment_method=data.payment_method,
+            payments=data.payments,
             origin=OrderOriginEnum.OFFLINE,
             items=[data.items]
         )
@@ -113,7 +113,7 @@ class OrdersService(BaseServiceModel):
             shop_id=data.shop_id,
             customer_id=data.customer_id,
             status=OrderStatusEnum.COMPLETED,
-            payment_method=data.payment_method,
+            payments=data.payments,
             origin=OrderOriginEnum.OFFLINE,
             items=data.items
         )

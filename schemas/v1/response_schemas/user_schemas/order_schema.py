@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from core.data_formats.enums.order_enum import OrderStatusEnum,OrderOriginEnum
+from core.data_formats.enums.order_enum import OrderStatusEnum,OrderOriginEnum,OrderPaymentEnums
 from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
 from typing import Optional,List,Dict
 from datetime import date,datetime
@@ -30,9 +30,9 @@ class OrderCreateResponseSchema(BaseModel):
     customer_id:str
     status:OrderStatusEnum
     type:str
-    
+    payments:Dict[OrderPaymentEnums,float]
     datas:Optional[dict]=None
-    payment_method:str
+    
     total_quantity:int
     total_buyprice:float
     total_sellprice:float
@@ -50,10 +50,10 @@ class OrderUpdateResponseSchema(BaseModel):
     shop_id:str
     customer_id:str
     type:str
-    
+    payments:Dict[OrderPaymentEnums,float]
     datas:Optional[dict]=None
     total_quantity:int
-    payment_method:str
+    
     total_buyprice:float
     total_sellprice:float
     status:OrderStatusEnum
@@ -68,11 +68,11 @@ class OrderDeleteResponseSchema(BaseModel):
     ui_id:int
     shop_id:str
     type:str
-    
+    payments:Dict[OrderPaymentEnums,float]
     datas:Optional[dict]=None
     customer_id:str
     total_quantity:int
-    payment_method:str
+    
     total_buyprice:float
     total_sellprice:float
     status:OrderStatusEnum
@@ -87,7 +87,7 @@ class OrderGetResponseSchema(BaseModel):
     ui_id:int
     shop_id:str
     total_quantity:int
-    payment_method:str
+    payments:Dict[OrderPaymentEnums,float]
     type:str
     
     datas:Optional[dict]=None

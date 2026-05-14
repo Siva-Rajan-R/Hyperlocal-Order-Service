@@ -18,3 +18,10 @@ class OrderOriginEnum(str, Enum):
 class OrderReturnTypeEnum(str,Enum):
     EXCHANGE="EXCHANGE"
     RETURNED="RETURNED"
+
+
+class OrderPaymentEnums(str,Enum):
+    UPI="UPI"
+    CREDIT="CREDIT"
+    CASH="CASH"
+    CARD="CARD"
