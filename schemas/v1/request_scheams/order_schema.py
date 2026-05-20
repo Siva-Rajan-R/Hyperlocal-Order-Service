@@ -73,6 +73,7 @@ class ReturnOrderSchema(BaseModel):
 
 class ReturnBulkOrderSchema(BaseModel):
     id:str
+    shop_id:str
     items_id:List[str]
 
 
@@ -81,7 +82,7 @@ class ExchangeOrderSchema(BaseModel):
     customer_id:str
     order_id:str
     item_id:str
-    payments:str
+    payments:Dict[OrderPaymentEnums,float]
     items:OrderItemsSchema
 
 class ExchangeBulkOrderSchema(BaseModel):
@@ -89,5 +90,5 @@ class ExchangeBulkOrderSchema(BaseModel):
     customer_id:str
     order_id:str
     items_id:List[str]
-    payments:str
+    payments:Dict[OrderPaymentEnums,float]
     items:List[OrderItemsSchema]

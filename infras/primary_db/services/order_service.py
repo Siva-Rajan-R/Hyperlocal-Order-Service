@@ -73,13 +73,15 @@ class OrdersService(BaseServiceModel):
         return await OrdersRepo(session=self.session).update_order_item(data=UpdateOrderItemDbSchema(id=data.item_id,order_id=data.id,status=OrderStatusEnum.REFUNDED))
     
     async def return_order_bulk(self,data:ReturnBulkOrderSchema):
-
+        order=await OrdersRepo(session=self.session).getby_id(data=GetOrderByIdSchema(id=data.id,shop_id=data.shop_id))
+        if not order:
+            return False
         res=await OrdersRepo(session=self.session).update_order_item_bulk(data=ReturnBulkOrderDbSchema(**data.model_dump(),status=OrderStatusEnum.REFUNDED.value))
 
         if len(data.items_id)!=len(res):
             return False
-        
-        return True
+        ic(order)
+        return order
     
     async def exchange_order(self,data:ExchangeOrderSchema)-> bool | None:
         data_toadd=CreateOrderSchema(
@@ -101,6 +103,7 @@ class OrdersService(BaseServiceModel):
             replacement_order_id=res['id']
         )
 
+
         await OrdersRepo(session=self.session).update_order_item(data=UpdateOrderItemDbSchema(id=data.item_id,order_id=data.order_id,status=OrderStatusEnum.EXCHANGED))
         self.session.add(exchange_item_toadd)
         await self.session.commit()
@@ -109,6 +112,7 @@ class OrdersService(BaseServiceModel):
     
 
     async def exchange_bulk_order(self,data:ExchangeBulkOrderSchema)-> bool | None:
+        order=await OrdersRepo(session=self.session).getby_id(data=GetOrderByIdSchema(id=data.order_id,shop_id=data.shop_id))
         data_toadd=CreateOrderSchema(
             shop_id=data.shop_id,
             customer_id=data.customer_id,
@@ -139,8 +143,8 @@ class OrdersService(BaseServiceModel):
         await OrdersRepo(session=self.session).update_order_item_bulk(data=ReturnBulkOrderDbSchema(id=data.order_id,items_id=data.items_id,status=OrderStatusEnum.EXCHANGED))
         self.session.add_all(exchange_order_items_toadd)
         await self.session.commit()
-
-        return True
+        ic(order)
+        return order
         
 
     async def delete(self,data:DeleteOrderSchema):

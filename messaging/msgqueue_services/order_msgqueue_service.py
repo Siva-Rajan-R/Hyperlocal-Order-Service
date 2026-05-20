@@ -45,7 +45,7 @@ class MessagingQueueOrderService:
         async with AsyncOrdersLocalSession() as session:
             order_service_obj=OrdersService(session=session)
             res=await order_service_obj.return_order_bulk(data=data)
-            
+            ic("inside srvice",res)
             return res
 
 
