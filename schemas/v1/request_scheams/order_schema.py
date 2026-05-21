@@ -15,7 +15,6 @@ class OrderItemsSchema(BaseModel):
     inv_serial_numbers:Optional[List[str]]=None
     buy_price:float
     sell_price:float
-    reason:Optional[str]=None
     datas:Optional[dict]=None
     gst:Optional[str]=None
     quantity:int
@@ -70,11 +69,15 @@ class ReturnOrderSchema(BaseModel):
     id:str
     item_id:str
 
+class ReturnOrderItemsSchema(BaseModel):
+    id:str
+    quantity:int
+    reason:str
 
 class ReturnBulkOrderSchema(BaseModel):
     id:str
     shop_id:str
-    items_id:List[str]
+    items:List[ReturnOrderItemsSchema]
 
 
 class ExchangeOrderSchema(BaseModel):
@@ -89,6 +92,6 @@ class ExchangeBulkOrderSchema(BaseModel):
     shop_id:str
     customer_id:str
     order_id:str
-    items_id:List[str]
+    exchange_items:List[ReturnOrderItemsSchema]
     payments:Dict[OrderPaymentEnums,float]
     items:List[OrderItemsSchema]

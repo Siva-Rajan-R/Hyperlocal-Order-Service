@@ -76,11 +76,22 @@ class OrdersService(BaseServiceModel):
         order=await OrdersRepo(session=self.session).getby_id(data=GetOrderByIdSchema(id=data.id,shop_id=data.shop_id))
         if not order:
             return False
-        res=await OrdersRepo(session=self.session).update_order_item_bulk(data=ReturnBulkOrderDbSchema(**data.model_dump(),status=OrderStatusEnum.REFUNDED.value))
 
-        if len(data.items_id)!=len(res):
-            return False
-        ic(order)
+        item_toupdate=[]
+        for item in data.items:
+            item_toupdate.append(
+                {
+                    'b_item_id':item.id,
+                    'b_order_id':data.id,
+                    'b_status':OrderStatusEnum.REFUNDED.value,
+                    'b_reason':item.reason,
+                    'b_returned_quantity':item.quantity
+                }
+            )
+        ic(item_toupdate)
+        res=await OrdersRepo(session=self.session).update_order_item_bulk_adv(data=item_toupdate)
+        ic(res)
+
         return order
     
     async def exchange_order(self,data:ExchangeOrderSchema)-> bool | None:
@@ -122,25 +133,36 @@ class OrdersService(BaseServiceModel):
             items=data.items
         )
 
-        
-
         res=await self.create(data=data_toadd,type="EXCHANGE")
         if not res:
             return res
         
         exchange_order_items_toadd=[]
-        for item_id in data.items_id:
+
+        item_toupdate=[]
+        for item in data.exchange_items:
+            item_toupdate.append(
+                {
+                    'b_item_id':item.id,
+                    'b_order_id':data.order_id,
+                    'b_status':OrderStatusEnum.EXCHANGED.value,
+                    'b_reason':item.reason,
+                    'b_returned_quantity':item.quantity
+                }
+            )
+
             formatted_data=ExchangedOrderItems(
                 id=generate_uuid(),
-                item_id=item_id,
+                item_id=item.id,
                 parent_order_id=data.order_id,
                 replacement_order_id=res['id']
             )
 
             exchange_order_items_toadd.append(formatted_data)
+            
 
         # await OrdersRepo(session=self.session).update_order_item(data=UpdateOrderItemDbSchema(id=data.item_id,order_id=data.order_id,status=OrderStatusEnum.EXCHANGED))
-        await OrdersRepo(session=self.session).update_order_item_bulk(data=ReturnBulkOrderDbSchema(id=data.order_id,items_id=data.items_id,status=OrderStatusEnum.EXCHANGED))
+        await OrdersRepo(session=self.session).update_order_item_bulk_adv(data=item_toupdate)
         self.session.add_all(exchange_order_items_toadd)
         await self.session.commit()
         ic(order)

@@ -36,6 +36,7 @@ items_subq = (
                     "reason",OrderItems.reason,
                     "datas",OrderItems.datas,
                     "status",OrderItems.status,
+                    "returned_quantity",OrderItems.returned_quantity,
                     "serial_numbers", OrderItems.serial_numbers,
                     "created_at", OrderItems.created_at
                 )
@@ -93,7 +94,8 @@ exchange_group_subq = (
                                 "reason", replacement_order_item.reason,
                                 "datas", replacement_order_item.datas,
                                 "serial_numbers", replacement_order_item.serial_numbers,
-                                "created_at", replacement_order_item.created_at
+                                "created_at", replacement_order_item.created_at,
+                                "returned_quantity",replacement_order_item.returned_quantity
                             )
                         ),
                         func.cast("[]", JSONB)
@@ -274,6 +276,32 @@ class OrdersRepo(BaseRepoModel):
         res = await self.session.execute(stmt)
         ic(res)
         return res.scalars().all()
+    
+
+    @start_db_transaction
+    async def update_order_item_bulk_adv(self,data:List[dict]):
+        ic(data)
+        if not data:
+            return []
+        ic("jumped")
+        stmt = (
+            update(OrderItems.__table__)
+            .where(
+                OrderItems.order_id == bindparam('b_order_id'),
+                OrderItems.id==bindparam("b_item_id")
+            )
+            .values(
+                status=bindparam("b_status"),
+                reason=bindparam("b_reason"),
+                returned_quantity=bindparam("b_returned_quantity")
+            )
+            .execution_options(synchronize_session=False)
+        )
+
+        res = await self.session.execute(stmt,data)
+        ic(res)
+        ic(res.rowcount)
+        return res
 
 
     @start_db_transaction

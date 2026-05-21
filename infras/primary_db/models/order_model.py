@@ -40,7 +40,7 @@ class OrderItems(BASE):
     gst=Column(String,nullable=True)
 
     quantity=Column(BigInteger,nullable=False)
-
+    returned_quantity=Column(BigInteger,nullable=True)
     status=Column(String,nullable=False)
     reason=Column(String,nullable=True)
     datas=Column(JSONB,nullable=True)

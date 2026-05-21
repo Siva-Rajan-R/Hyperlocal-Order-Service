@@ -21,6 +21,7 @@ class OrderItemsResponseSchema(BaseModel):
     status:OrderStatusEnum
     gst:Optional[str]=None
     quantity:int
+    returned_quantity:Optional[int]=None
 
     
 class OrderCreateResponseSchema(BaseModel):
