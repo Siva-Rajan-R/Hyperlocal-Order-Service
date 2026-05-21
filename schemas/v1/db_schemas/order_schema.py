@@ -20,14 +20,14 @@ class OrderItemsDbSchema(BaseModel):
     datas:Optional[dict]=None
     status:OrderStatusEnum
     gst:Optional[str]=None
-    quantity:int
+    quantity:float
     
 class CreateOrderDbSchema(BaseModel):
     id:str
     shop_id:str
-    total_quantity:int
-    total_sellprice:int
-    total_buyprice:int
+    total_quantity:float
+    total_sellprice:float
+    total_buyprice:float
     customer_id:str
     payments:Dict[OrderPaymentEnums,float]
     status:OrderStatusEnum
@@ -38,10 +38,10 @@ class CreateOrderDbSchema(BaseModel):
 class UpdateOrderDbSchema(BaseModel):
     id:str
     shop_id:str
-    total_quantity:Optional[int]=None
-    total_sellprice:Optional[int]=None
-    total_buyprice:Optional[int]=None
-    
+    total_quantity:Optional[float]=None
+    total_sellprice:Optional[float]=None
+    total_buyprice:Optional[float]=None
+
     status:Optional[OrderStatusEnum]=None
     origin:Optional[OrderOriginEnum]=None
 

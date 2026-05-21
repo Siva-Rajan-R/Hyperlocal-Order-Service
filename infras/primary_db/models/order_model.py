@@ -10,7 +10,7 @@ class Orders(BASE):
     shop_id=Column(String,nullable=False)
     total_buyprice=Column(Float,nullable=False)
     total_sellprice=Column(Float,nullable=False)
-    total_quantity=Column(BigInteger,nullable=False)
+    total_quantity=Column(Float,nullable=False)
     customer_id=Column(String,nullable=True)
     status=Column(String,nullable=False)
     origin=Column(String,nullable=False)
@@ -39,8 +39,8 @@ class OrderItems(BASE):
 
     gst=Column(String,nullable=True)
 
-    quantity=Column(BigInteger,nullable=False)
-    returned_quantity=Column(BigInteger,nullable=True)
+    quantity=Column(Float,nullable=False)
+    returned_quantity=Column(Float,nullable=True)
     status=Column(String,nullable=False)
     reason=Column(String,nullable=True)
     datas=Column(JSONB,nullable=True)

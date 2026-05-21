@@ -17,7 +17,7 @@ class OrderItemsSchema(BaseModel):
     sell_price:float
     datas:Optional[dict]=None
     gst:Optional[str]=None
-    quantity:int
+    quantity:float
 
 class CreateOrderSchema(BaseModel):
     shop_id:str
@@ -71,7 +71,7 @@ class ReturnOrderSchema(BaseModel):
 
 class ReturnOrderItemsSchema(BaseModel):
     id:str
-    quantity:int
+    quantity:float
     reason:str
 
 class ReturnBulkOrderSchema(BaseModel):

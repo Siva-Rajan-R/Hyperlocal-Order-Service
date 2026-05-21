@@ -20,8 +20,8 @@ class OrderItemsResponseSchema(BaseModel):
     sell_price:float
     status:OrderStatusEnum
     gst:Optional[str]=None
-    quantity:int
-    returned_quantity:Optional[int]=None
+    quantity:float
+    returned_quantity:Optional[float]=None
 
     
 class OrderCreateResponseSchema(BaseModel):
@@ -34,7 +34,7 @@ class OrderCreateResponseSchema(BaseModel):
     payments:Dict[OrderPaymentEnums,float]
     datas:Optional[dict]=None
     
-    total_quantity:int
+    total_quantity:float
     total_buyprice:float
     total_sellprice:float
     origin:OrderOriginEnum
@@ -53,7 +53,7 @@ class OrderUpdateResponseSchema(BaseModel):
     type:str
     payments:Dict[OrderPaymentEnums,float]
     datas:Optional[dict]=None
-    total_quantity:int
+    total_quantity:float
     
     total_buyprice:float
     total_sellprice:float
@@ -72,7 +72,7 @@ class OrderDeleteResponseSchema(BaseModel):
     payments:Dict[OrderPaymentEnums,float]
     datas:Optional[dict]=None
     customer_id:str
-    total_quantity:int
+    total_quantity:float
     
     total_buyprice:float
     total_sellprice:float
@@ -87,7 +87,7 @@ class OrderGetResponseSchema(BaseModel):
     id:str
     ui_id:int
     shop_id:str
-    total_quantity:int
+    total_quantity:float
     payments:Dict[OrderPaymentEnums,float]
     type:str
     
