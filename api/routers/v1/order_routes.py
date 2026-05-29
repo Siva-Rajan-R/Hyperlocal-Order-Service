@@ -35,7 +35,7 @@ async def return_order(data:ReturnOrderSchema,session:PG_SESSION):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).return_order(data=data)
 
 
-@router.delete('/{shop_id}/{order_id}')
+@router.delete('/{shop_id}/{id}')
 async def delete(session:PG_SESSION,data:DeleteOrderSchema=Depends()):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).delete(data=data)
 
@@ -54,7 +54,7 @@ async def get_all(session:PG_SESSION,data:GetOrderByShopIdSchema=Depends()):
 async def get_by_customer(session:PG_SESSION,data:GetOrderByCustomerIdSchema=Depends()):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).getby_customer_id(data=data)
 
-@router.get('/{shop_id}/{order_id}')
+@router.get('/{shop_id}/{id}')
 async def get_byid(session:PG_SESSION,data:GetOrderByIdSchema=Depends()):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).get_byid(data=data)
 
