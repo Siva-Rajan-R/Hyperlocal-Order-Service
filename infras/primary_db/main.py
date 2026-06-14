@@ -4,7 +4,7 @@ from core.configs.settings_config import SETTINGS
 from icecream import ic
 
 
-ENGINE=create_async_engine(SETTINGS.PG_DATABASE_URL,echo=False)
+ENGINE=create_async_engine(SETTINGS.PG_DATABASE_URL,echo=False, pool_size=1, max_overflow=2, pool_recycle=1800, pool_pre_ping=True)
 
 BASE=declarative_base()
 

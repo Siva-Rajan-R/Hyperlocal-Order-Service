@@ -4,6 +4,11 @@ from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
 from typing import Optional,List,Dict
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 
+class OrderCustomerSchema(BaseModel):
+    customer_id: str
+    customer_name: str
+    customer_mobile_number: str
+
 
 class OrderItemsSchema(BaseModel):
     inventory_id:str
@@ -21,7 +26,8 @@ class OrderItemsSchema(BaseModel):
 
 class CreateOrderSchema(BaseModel):
     shop_id:str
-    customer_id:str
+    customer_id:Optional[str]=None
+    customer:Optional[OrderCustomerSchema]=None
     status:OrderStatusEnum
     payments:Dict[OrderPaymentEnums,float]
     datas:Optional[dict]=None
@@ -40,6 +46,11 @@ class GetAllOrderSchema(BaseModel):
     limit:Optional[int]=Field(default=10,le=100)
     offset:int=Field(default=1)
     timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata
+    from_date:Optional[str]=None
+    to_date:Optional[str]=None
+    status:Optional[str]=None
+    origin:Optional[str]=None
+    payment_method:Optional[str]=None
 
 
 class GetOrderByShopIdSchema(BaseModel):
@@ -48,6 +59,11 @@ class GetOrderByShopIdSchema(BaseModel):
     limit:Optional[int]=Field(default=10,le=100)
     offset:int=Field(default=1)
     timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata
+    from_date:Optional[str]=None
+    to_date:Optional[str]=None
+    status:Optional[str]=None
+    origin:Optional[str]=None
+    payment_method:Optional[str]=None
 
 
 class GetOrderByCustomerIdSchema(BaseModel):
@@ -57,6 +73,11 @@ class GetOrderByCustomerIdSchema(BaseModel):
     limit:Optional[int]=Field(default=10,le=100)
     offset:int=Field(default=1)
     timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata
+    from_date:Optional[str]=None
+    to_date:Optional[str]=None
+    status:Optional[str]=None
+    origin:Optional[str]=None
+    payment_method:Optional[str]=None
 
 
 class GetOrderByIdSchema(BaseModel):
@@ -68,6 +89,10 @@ class GetOrderByIdSchema(BaseModel):
 class ReturnOrderSchema(BaseModel):
     id:str
     item_id:str
+    shop_id:str
+    customer_id:Optional[str]=None
+    customer:Optional[OrderCustomerSchema]=None
+    payments:Optional[dict]=None
 
 class ReturnOrderItemsSchema(BaseModel):
     id:str
@@ -77,12 +102,16 @@ class ReturnOrderItemsSchema(BaseModel):
 class ReturnBulkOrderSchema(BaseModel):
     id:str
     shop_id:str
+    customer_id:Optional[str]=None
+    customer:Optional[OrderCustomerSchema]=None
+    payments:Optional[dict]=None
     items:List[ReturnOrderItemsSchema]
 
 
 class ExchangeOrderSchema(BaseModel):
     shop_id:str
-    customer_id:str
+    customer_id:Optional[str]=None
+    customer:Optional[OrderCustomerSchema]=None
     order_id:str
     item_id:str
     payments:Dict[OrderPaymentEnums,float]
@@ -90,7 +119,8 @@ class ExchangeOrderSchema(BaseModel):
 
 class ExchangeBulkOrderSchema(BaseModel):
     shop_id:str
-    customer_id:str
+    customer_id:Optional[str]=None
+    customer:Optional[OrderCustomerSchema]=None
     order_id:str
     exchange_items:List[ReturnOrderItemsSchema]
     payments:Dict[OrderPaymentEnums,float]

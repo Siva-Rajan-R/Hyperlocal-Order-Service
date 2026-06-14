@@ -12,6 +12,7 @@ from schemas.v1.response_schemas.user_schemas.order_schema import OrderGetRespon
 from hyperlocal_platform.core.models.req_res_models import ErrorResponseTypDict,SuccessResponseTypDict,BaseResponseTypDict
 
 from infras.caching.models.billing_model import BillingCacheModel,CachingBillingSchema
+from infras.read_db.repos.order_repo import OrderReadDbRepo
 
 class HandleOrderRequest:
 
@@ -133,41 +134,68 @@ class HandleOrderRequest:
         )
     
     async def get(self,data:GetAllOrderSchema):
-        res=await OrdersService(session=self.session).get(data=data)
+        res=await OrderReadDbRepo.get(data=data)
         ic(res)
+        
+        if data.offset in (0, 1):
+            data_to_send = {
+                "overall_datas": res.get("overall_datas", {}),
+                "datas": [OrderGetResponseSchema(**r) for r in res.get("datas", [])]
+            }
+        else:
+            data_to_send = [OrderGetResponseSchema(**r) for r in res.get("datas", [])]
+
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=[OrderGetResponseSchema(**r) for r in res] if res else []
+            data=data_to_send
         )
     
     async def getby_shop_id(self,data:GetOrderByShopIdSchema):
-        res=await OrdersService(session=self.session).getby_shop_id(data=data)
+        res=await OrderReadDbRepo.getby_shop_id(data=data)
+        
+        if data.offset in (0, 1):
+            data_to_send = {
+                "overall_datas": res.get("overall_datas", {}),
+                "datas": [OrderGetResponseSchema(**r) for r in res.get("datas", [])]
+            }
+        else:
+            data_to_send = [OrderGetResponseSchema(**r) for r in res.get("datas", [])]
+
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=[OrderGetResponseSchema(**r) for r in res] if res else []
+            data=data_to_send
         )
     
     async def getby_customer_id(self,data:GetOrderByCustomerIdSchema):
-        res=await OrdersService(session=self.session).getby_customer_id(data=data)
+        res=await OrderReadDbRepo.getby_customer_id(data=data)
+        
+        if data.offset in (0, 1):
+            data_to_send = {
+                "overall_datas": res.get("overall_datas", {}),
+                "datas": [OrderGetResponseSchema(**r) for r in res.get("datas", [])]
+            }
+        else:
+            data_to_send = [OrderGetResponseSchema(**r) for r in res.get("datas", [])]
+
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=[OrderGetResponseSchema(**r) for r in res] if res else []
+            data=data_to_send
         )
     
     async def get_byid(self,data:GetOrderByIdSchema):
-        res=await OrdersService(session=self.session).getby_id(data=data)
+        res=await OrderReadDbRepo.getby_id(data=data)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
@@ -178,7 +206,7 @@ class HandleOrderRequest:
         )
     
     async def search(self,limit:int,shop_id:str,query:str=""):
-        res=await OrdersService(session=self.session).search(query=query,shop_id=shop_id,limit=limit)
+        res=await OrderReadDbRepo.search(query_str=query,shop_id=shop_id,limit=limit)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
@@ -188,5 +216,29 @@ class HandleOrderRequest:
             data=res
         )
     
+    async def get_customer_stats(self, shop_id: str, customer_id: str):
+        from infras.read_db.repos.order_stats_repo import CustomerStatsReadDbRepo
+        res = await CustomerStatsReadDbRepo.get_customer_stats(shop_id=shop_id, customer_id=customer_id)
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                status_code=200,
+                success=True,
+                msg="Customer stats fetched successfully"
+            ),
+            data=res
+        )
 
-        
+    async def get_dashboard_stats(self, shop_id: str, start_date: str, end_date: str, supplier_id: Optional[str] = None, category: Optional[str] = None):
+        from infras.read_db.repos.order_stats_repo import DashboardStatsRepo
+        from datetime import datetime
+        start = datetime.fromisoformat(start_date)
+        end = datetime.fromisoformat(end_date)
+        res = await DashboardStatsRepo.get_dashboard_stats(shop_id=shop_id, start_date=start, end_date=end, supplier_id=supplier_id, category=category)
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                status_code=200,
+                success=True,
+                msg="Dashboard stats fetched successfully"
+            ),
+            data=res
+        )

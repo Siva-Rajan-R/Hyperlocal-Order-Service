@@ -5,7 +5,9 @@ from schemas.v1.request_scheams.order_schema import DeleteOrderSchema,GetAllOrde
 from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_transaction
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 from ..models.order_model import Orders,OrderItems,ExchangedOrderItems
-from sqlalchemy import select,update,delete,func,or_,and_,String,bindparam
+from sqlalchemy import select,update,delete,func,or_,and_,String,bindparam,case,text
+from datetime import datetime, timezone
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 from icecream import ic
@@ -71,6 +73,8 @@ exchange_group_subq = (
             "total_sellprice", replacement_order.total_sellprice,
             "total_quantity", replacement_order.total_quantity,
             "type", replacement_order.type,
+            "payments", replacement_order.payments,
+            "datas", replacement_order.datas,
             "created_at", replacement_order.created_at,
             "updated_at", replacement_order.updated_at,
 
@@ -179,8 +183,49 @@ class OrdersRepo(BaseRepoModel):
         )
         super().__init__(session)
 
+    def _build_filter_conds(self, data):
+        conds = [Orders.type != "EXCHANGE"]
+        if hasattr(data, 'shop_id') and getattr(data, 'shop_id'):
+            conds.append(Orders.shop_id == data.shop_id)
+        if hasattr(data, 'customer_id') and getattr(data, 'customer_id'):
+            conds.append(Orders.customer_id == data.customer_id)
+        if hasattr(data, 'status') and getattr(data, 'status'):
+            conds.append(func.lower(Orders.status) == data.status.lower())
+        if hasattr(data, 'origin') and getattr(data, 'origin'):
+            conds.append(func.lower(Orders.origin) == data.origin.lower())
+        if hasattr(data, 'payment_method') and getattr(data, 'payment_method'):
+            conds.append(Orders.payments.has_key(data.payment_method.upper()))
+        if hasattr(data, 'from_date') and getattr(data, 'from_date'):
+            from_dt = datetime.strptime(getattr(data, 'from_date'), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            conds.append(Orders.created_at >= from_dt)
+        if hasattr(data, 'to_date') and getattr(data, 'to_date'):
+            to_date_str = getattr(data, 'to_date')
+            if len(to_date_str) <= 10:
+                to_date_str += ' 23:59:59'
+            to_dt = datetime.strptime(to_date_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            conds.append(Orders.created_at <= to_dt)
+        if hasattr(data, 'query') and getattr(data, 'query'):
+            search_term = f"%{data.query}%"
+            conds.append(
+                or_(
+                    Orders.id.ilike(search_term),
+                    Orders.ui_id.ilike(search_term),
+                    func.cast(Orders.created_at, String).ilike(search_term),
+                    Orders.origin.ilike(search_term),
+                    Orders.status.ilike(search_term),
+                    Orders.shop_id.ilike(search_term)
+                )
+            )
+        return conds
 
-        
+
+    async def get_next_sequence(self, shop_id: str, start_from: int = 1) -> int:
+        seq_name = f"seq_order_{shop_id.replace('-', '_').lower()}"
+        await self.session.execute(text(f"CREATE SEQUENCE IF NOT EXISTS {seq_name} START WITH {start_from}"))
+        res = await self.session.execute(text(f"SELECT nextval('{seq_name}')"))
+        return res.scalar_one()
+
+
     @start_db_transaction
     async def create(self,data:CreateOrderDbSchema)-> dict | None:
         stmt=(
@@ -341,17 +386,7 @@ class OrdersRepo(BaseRepoModel):
                     exchanged_items_subq,
                     exchanged_items_subq.c.parent_order_id == Orders.id
                 )
-            .where(
-                
-                Orders.type!="EXCHANGE",
-                or_(
-                    Orders.id.ilike(search_term),
-                    func.cast(Orders.created_at, String).ilike(search_term),
-                    Orders.origin.ilike(search_term),
-                    Orders.status.ilike(search_term),
-                    Orders.shop_id.ilike(search_term),
-                ),
-            )
+            .where(*self._build_filter_conds(data))
             .offset(cursor)
             .limit(data.limit)
         )
@@ -384,17 +419,7 @@ class OrdersRepo(BaseRepoModel):
                     exchanged_items_subq,
                     exchanged_items_subq.c.parent_order_id == Orders.id
             )
-            .where(
-                Orders.shop_id==data.shop_id,
-                Orders.type!="EXCHANGE",
-                or_(
-                    Orders.id.ilike(search_term),
-                    func.cast(Orders.created_at,String).ilike(search_term),
-                    Orders.origin.ilike(search_term),
-                    Orders.status.ilike(search_term),
-                    Orders.shop_id.ilike(search_term)
-                ),
-            )
+            .where(*self._build_filter_conds(data))
             .offset(offset=cursor).limit(data.limit))
 
         orders=(await self.session.execute(order_stmt)).mappings().all()
@@ -426,18 +451,7 @@ class OrdersRepo(BaseRepoModel):
                     exchanged_items_subq,
                     exchanged_items_subq.c.parent_order_id == Orders.id
             )
-            .where(
-                Orders.shop_id==data.shop_id,
-                Orders.customer_id==data.customer_id,
-                Orders.type!="EXCHANGE",
-                or_(
-                    Orders.id.ilike(search_term),
-                    func.cast(Orders.created_at,String).ilike(search_term),
-                    Orders.origin.ilike(search_term),
-                    Orders.status.ilike(search_term),
-                    Orders.shop_id.ilike(search_term)
-                ),
-            )
+            .where(*self._build_filter_conds(data))
             .offset(offset=cursor).limit(data.limit))
 
         orders=(await self.session.execute(order_stmt)).mappings().all()
@@ -496,6 +510,26 @@ class OrdersRepo(BaseRepoModel):
 
         return orders
 
+    async def get_overall_values(self, data: GetAllOrderSchema | GetOrderByShopIdSchema | GetOrderByCustomerIdSchema) -> dict:
+        conds = self._build_filter_conds(data)
 
+        stmt_orders = select(
+            func.sum(Orders.total_sellprice).label("total_order_value"),
+            func.count(Orders.id).label("total_orders")
+        ).where(*conds)
         
+        res_orders = (await self.session.execute(stmt_orders)).mappings().one_or_none()
+
+        stmt_items = select(
+            func.sum(case((OrderItems.status == 'REFUNDED', 1), else_=0)).label("total_returns"),
+            func.sum(case((OrderItems.status == 'EXCHANGED', 1), else_=0)).label("total_exchanged")
+        ).select_from(Orders).outerjoin(OrderItems, Orders.id == OrderItems.order_id).where(*conds)
         
+        res_items = (await self.session.execute(stmt_items)).mappings().one_or_none()
+
+        return {
+            "total_order_value": res_orders["total_order_value"] or 0 if res_orders else 0,
+            "total_orders": res_orders["total_orders"] or 0 if res_orders else 0,
+            "total_returns": res_items["total_returns"] or 0 if res_items else 0,
+            "total_exchanged": res_items["total_exchanged"] or 0 if res_items else 0
+        }

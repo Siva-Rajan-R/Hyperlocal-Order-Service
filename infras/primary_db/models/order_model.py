@@ -6,7 +6,7 @@ class Orders(BASE):
     __tablename__="orders"
     id=Column(String,primary_key=True)
     sequence_id=Column(BigInteger,Identity(always=True),nullable=False)
-    ui_id=Column(BigInteger,Identity(always=True),nullable=False)
+    ui_id=Column(String,nullable=False)
     shop_id=Column(String,nullable=False)
     total_buyprice=Column(Float,nullable=False)
     total_sellprice=Column(Float,nullable=False)

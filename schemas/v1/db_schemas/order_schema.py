@@ -24,11 +24,12 @@ class OrderItemsDbSchema(BaseModel):
     
 class CreateOrderDbSchema(BaseModel):
     id:str
+    ui_id:str
     shop_id:str
     total_quantity:float
     total_sellprice:float
     total_buyprice:float
-    customer_id:str
+    customer_id:Optional[str]=None
     payments:Dict[OrderPaymentEnums,float]
     status:OrderStatusEnum
     origin:OrderOriginEnum
