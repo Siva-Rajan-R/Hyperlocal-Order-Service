@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from api.routers.v1 import order_routes
+from api.routers.v1 import order_routes, cart_routes, return_routes, exchange_routes
 from contextlib import asynccontextmanager
 from icecream import ic
 from dotenv import load_dotenv
@@ -55,4 +55,6 @@ app=FastAPI(
 
 # Routes to include
 app.include_router(order_routes.router)
-
+app.include_router(cart_routes.router)
+app.include_router(return_routes.router)
+app.include_router(exchange_routes.router)

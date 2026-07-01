@@ -11,11 +11,17 @@ class RabbitMQMessagingConfig:
 
     @staticmethod
     async def get_rabbitmq_connection()->RobustConnection:
+        # connection=await connect_robust(
+        #     host='89.167.72.254',
+        #     port=5672,
+        #     login="test",
+        #     password="test1234"
+        # )
         connection=await connect_robust(
-            host='89.167.72.254',
+            host='localhost',
             port=5672,
-            login="test",
-            password="test1234"
+            login="guest",
+            password="guest"
         )
         return connection
     

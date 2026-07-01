@@ -34,6 +34,8 @@ class OrderItemsResponseSchema(BaseModel):
     gst:Optional[str]=None
     quantity:float
     returned_quantity:Optional[float]=None
+    returns:Optional[List[dict]]=None
+    exchanges:Optional[List[dict]]=None
 
     
 class OrderCreateResponseSchema(BaseModel):
@@ -131,6 +133,7 @@ class OrderGetResponseSchema(BaseModel):
     status:OrderStatusEnum
     origin:OrderOriginEnum
     items:List[OrderItemsResponseSchema]
+    returns:Optional[List[dict]]=None
     exchanged_items:Optional[List[ExchangedItemResponseSchema]]=None
 
     created_at:datetime

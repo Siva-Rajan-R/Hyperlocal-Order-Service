@@ -131,6 +131,7 @@ class OrderGetResponseSchema(BaseModel):
     status:OrderStatusEnum
     origin:OrderOriginEnum
     items:List[OrderItemsResponseSchema]
+    returns:Optional[List[dict]]=None
     exchanged_items:Optional[List[ExchangedItemResponseSchema]]=None
 
     created_at:datetime

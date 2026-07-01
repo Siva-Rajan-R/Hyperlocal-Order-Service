@@ -11,28 +11,24 @@ class OrderCustomerSchema(BaseModel):
 
 
 class OrderItemsSchema(BaseModel):
-    inventory_id:str
+    product_id: str
     variant_id:Optional[str]=None
     batch_id:Optional[str]=None
-    serialno_id:Optional[str]=None
+    serialno_infos:Optional[str]=None
     barcode:Optional[str]=None
-    serialno_id:Optional[str]=None
-    inv_serial_numbers:Optional[List[str]]=None
-    buy_price:float
-    sell_price:float
-    datas:Optional[dict]=None
-    gst:Optional[str]=None
     quantity:float
 
 class CreateOrderSchema(BaseModel):
-    shop_id:str
-    customer_id:Optional[str]=None
-    customer:Optional[OrderCustomerSchema]=None
-    status:OrderStatusEnum
-    payments:Dict[OrderPaymentEnums,float]
-    datas:Optional[dict]=None
-    origin:OrderOriginEnum
-    items:List[OrderItemsSchema]
+    shop_id: str
+    session_id: str
+    customer_id: Optional[str] = None
+    status: OrderStatusEnum
+    origin: OrderOriginEnum
+    type: Optional[str] = None
+    calculation_infos: dict = {}
+    charges_infos: dict = {}
+    payment_infos: List[dict] = []
+    additional_infos: Optional[dict] = None
 
 
 
@@ -86,42 +82,35 @@ class GetOrderByIdSchema(BaseModel):
     timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata
 
 
-class ReturnOrderSchema(BaseModel):
-    id:str
-    item_id:str
-    shop_id:str
-    customer_id:Optional[str]=None
-    customer:Optional[OrderCustomerSchema]=None
-    payments:Optional[dict]=None
+class ReturnSerialnoInfoSchema(BaseModel):
+    id: str
+    name: str
 
-class ReturnOrderItemsSchema(BaseModel):
-    id:str
-    quantity:float
-    reason:str
+class ReturnItemRequestSchema(BaseModel):
+    order_item_id: str
+    quantity: float
+    reason: Optional[str] = None
+    serialno_infos: Optional[List[ReturnSerialnoInfoSchema]] = None
 
-class ReturnBulkOrderSchema(BaseModel):
-    id:str
-    shop_id:str
-    customer_id:Optional[str]=None
-    customer:Optional[OrderCustomerSchema]=None
-    payments:Optional[dict]=None
-    items:List[ReturnOrderItemsSchema]
+class CreateReturnSchema(BaseModel):
+    shop_id: str
+    order_id: str
+    payment_infos:dict
+    items: List[ReturnItemRequestSchema]
 
+class ExchangeItemRequestSchema(BaseModel):
+    return_order_item_id: str
+    replacement_product_id: str
+    quantity_returned: float
+    reason: Optional[str] = None
 
-class ExchangeOrderSchema(BaseModel):
-    shop_id:str
-    customer_id:Optional[str]=None
-    customer:Optional[OrderCustomerSchema]=None
-    order_id:str
-    item_id:str
-    payments:Dict[OrderPaymentEnums,float]
-    items:OrderItemsSchema
-
-class ExchangeBulkOrderSchema(BaseModel):
-    shop_id:str
-    customer_id:Optional[str]=None
-    customer:Optional[OrderCustomerSchema]=None
-    order_id:str
-    exchange_items:List[ReturnOrderItemsSchema]
-    payments:Dict[OrderPaymentEnums,float]
-    items:List[OrderItemsSchema]
+class CreateExchangeSchema(BaseModel):
+    shop_id: str
+    original_order_id: str
+    customer_id: Optional[str] = None
+    customer: Optional[OrderCustomerSchema] = None
+    reason: Optional[str] = None
+    status: OrderStatusEnum = OrderStatusEnum.EXCHANGED
+    payments: List[dict] = []
+    replacement_items: List[OrderItemsSchema]
+    exchange_items: List[ExchangeItemRequestSchema]

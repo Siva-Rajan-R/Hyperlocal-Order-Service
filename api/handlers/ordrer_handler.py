@@ -7,7 +7,7 @@ from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
 from typing import Optional,List,Dict
 from core.errors.messaging_errors import BussinessError,FatalError,RetryableError
 from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,DeleteOrderSchema,ReturnOrderSchema,ExchangeOrderSchema,GetOrderByCustomerIdSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,DeleteOrderSchema,GetOrderByCustomerIdSchema
 from schemas.v1.response_schemas.user_schemas.order_schema import OrderGetResponseSchema,OrderCreateResponseSchema,OrderUpdateResponseSchema,OrderDeleteResponseSchema
 from hyperlocal_platform.core.models.req_res_models import ErrorResponseTypDict,SuccessResponseTypDict,BaseResponseTypDict
 
@@ -22,8 +22,9 @@ class HandleOrderRequest:
         self.shop_id=shop_id
 
         
-    async def create(self,data:CreateOrderSchema):
-        res=await OrdersService(session=self.session).create(data=data)
+    async def create(self, data: CreateOrderSchema):
+
+        res = await OrdersService(session=self.session).create(data=data)
         if not res:
             raise HTTPException(
                 status_code=400,
@@ -41,7 +42,7 @@ class HandleOrderRequest:
                 msg="Order Created Successfully",
                 success=True
             ),
-            data=OrderCreateResponseSchema(**res) if res else None
+            data=res
         )
     
     async def update(self,data:CreateOrderSchema):
@@ -66,51 +67,7 @@ class HandleOrderRequest:
         )
     
 
-    async def return_order(self,data:ReturnOrderSchema):
-        res=await OrdersService(session=self.session).return_order(data=data)
-        ic(res)
-        if not res:
-            raise HTTPException(
-                    status_code=400,
-                    detail=ErrorResponseTypDict(
-                        status_code=400,
-                        msg="Error : Updating order",
-                        description="Invalid Data for order",
-                        success=False
-                    )
-                )
-        
-        return SuccessResponseTypDict(
-            detail=BaseResponseTypDict(
-                status_code=200,
-                msg="Order Updated Successfully",
-                success=True
-            )
-        )
-    
 
-    async def exchange_order(self,data:ExchangeOrderSchema):
-        res=await OrdersService(session=self.session).exchange_order(data=data)
-        ic(res)
-        if not res:
-            raise HTTPException(
-                    status_code=400,
-                    detail=ErrorResponseTypDict(
-                        status_code=400,
-                        msg="Error : Updating order",
-                        description="Invalid Data for order",
-                        success=False
-                    )
-                )
-        
-        return SuccessResponseTypDict(
-            detail=BaseResponseTypDict(
-                status_code=200,
-                msg="Order Updated Successfully",
-                success=True
-            )
-        )
-        
     async def delete(self,data:DeleteOrderSchema):
         res=await OrdersService(session=self.session).delete(data=data)
         if not res:
@@ -133,17 +90,34 @@ class HandleOrderRequest:
             data=OrderDeleteResponseSchema(**res) if res else None
         )
     
-    async def get(self,data:GetAllOrderSchema):
-        res=await OrderReadDbRepo.get(data=data)
-        ic(res)
+    def _map_order_fields(self, r: dict) -> dict:
+        calc_infos = r.get('calculation_infos', {})
+        r['total_quantity'] = calc_infos.get('total_quantity', 0.0)
+        r['total_buyprice'] = calc_infos.get('total_buyprice', 0.0)
+        r['total_sellprice'] = calc_infos.get('total_sellprice', 0.0)
         
-        if data.offset in (0, 1):
-            data_to_send = {
-                "overall_datas": res.get("overall_datas", {}),
-                "datas": [OrderGetResponseSchema(**r) for r in res.get("datas", [])]
-            }
-        else:
-            data_to_send = [OrderGetResponseSchema(**r) for r in res.get("datas", [])]
+        payments = {}
+        for p in r.get('payment_infos', []):
+            mode = p.get('mode')
+            amount = p.get('amount', 0.0)
+            if mode:
+                payments[mode] = payments.get(mode, 0.0) + amount
+        r['payments'] = payments
+        
+        if 'items' in r:
+            mapped_items = []
+            for item in r.get('items', []):
+                item['inventory_id'] = item.get('product_id', '')
+                item['variant_info'] = item.get('variant_infos')
+                item['batch_info'] = item.get('batch_infos')
+                item['serialno_info'] = item.get('serialno_infos')
+                mapped_items.append(item)
+            r['items'] = mapped_items
+        return r
+
+    async def get(self,data:GetAllOrderSchema):
+        res=await OrdersService(session=self.session).get(data=data)
+        ic(res)
 
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
@@ -151,7 +125,7 @@ class HandleOrderRequest:
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=data_to_send
+            data=res
         )
     
     async def getby_shop_id(self,data:GetOrderByShopIdSchema):
@@ -160,10 +134,10 @@ class HandleOrderRequest:
         if data.offset in (0, 1):
             data_to_send = {
                 "overall_datas": res.get("overall_datas", {}),
-                "datas": [OrderGetResponseSchema(**r) for r in res.get("datas", [])]
+                "datas": [OrderGetResponseSchema(**self._map_order_fields(r)) for r in res.get("datas", [])]
             }
         else:
-            data_to_send = [OrderGetResponseSchema(**r) for r in res.get("datas", [])]
+            data_to_send = [OrderGetResponseSchema(**self._map_order_fields(r)) for r in res.get("datas", [])]
 
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
@@ -180,10 +154,10 @@ class HandleOrderRequest:
         if data.offset in (0, 1):
             data_to_send = {
                 "overall_datas": res.get("overall_datas", {}),
-                "datas": [OrderGetResponseSchema(**r) for r in res.get("datas", [])]
+                "datas": [OrderGetResponseSchema(**self._map_order_fields(r)) for r in res.get("datas", [])]
             }
         else:
-            data_to_send = [OrderGetResponseSchema(**r) for r in res.get("datas", [])]
+            data_to_send = [OrderGetResponseSchema(**self._map_order_fields(r)) for r in res.get("datas", [])]
 
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
@@ -194,7 +168,7 @@ class HandleOrderRequest:
             data=data_to_send
         )
     
-    async def get_byid(self,data:GetOrderByIdSchema):
+    async def getby_id(self,data:GetOrderByIdSchema):
         res=await OrderReadDbRepo.getby_id(data=data)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
@@ -202,7 +176,7 @@ class HandleOrderRequest:
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=OrderGetResponseSchema(**res) if res else None
+            data=OrderGetResponseSchema(**self._map_order_fields(res)) if res else None
         )
     
     async def search(self,limit:int,shop_id:str,query:str=""):

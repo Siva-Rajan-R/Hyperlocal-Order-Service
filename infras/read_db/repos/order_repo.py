@@ -14,6 +14,7 @@ class OrderReadDbRepo:
             
             # Format the incoming data using the Pydantic model
             structured_data = OrderReadModel(**data).model_dump(mode="json", exclude_none=True)
+            structured_data.pop("_id", None)
             
             res = await ORDERS_COLLECTION.replace_one(
                 {"id": structured_data["id"]}, 

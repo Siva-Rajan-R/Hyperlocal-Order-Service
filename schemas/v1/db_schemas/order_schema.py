@@ -1,58 +1,83 @@
 from pydantic import BaseModel
-from core.data_formats.enums.order_enum import OrderStatusEnum,OrderOriginEnum,OrderPaymentEnums
-from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
-from typing import Optional,List,Dict
-
+from core.data_formats.enums.order_enum import OrderStatusEnum, OrderOriginEnum, OrderPaymentEnums
+from typing import Optional, List, Dict
+from datetime import datetime
 
 class OrderItemsDbSchema(BaseModel):
-    id:str
-    order_id:str
-    inventory_id:str
-    variant_id:Optional[str]=None
-    batch_id:Optional[str]=None
-    serialno_id:Optional[str]=None
-    barcode:Optional[str]=None
-    serialno_id:Optional[str]=None
-    inv_serial_numbers:Optional[List[str]]=None
-    buy_price:float
-    sell_price:float
-    reason:Optional[str]=None
-    datas:Optional[dict]=None
-    status:OrderStatusEnum
-    gst:Optional[str]=None
-    quantity:float
+    id: str
+    order_id: str
+    product_id: str
+    variant_id: Optional[str] = None
+    batch_id: Optional[str] = None
+    buy_price: float
+    sell_price: float
+    quantity: float
+    gst: Optional[str] = None
+    additional_infos: Optional[dict] = None
     
 class CreateOrderDbSchema(BaseModel):
-    id:str
-    ui_id:str
-    shop_id:str
-    total_quantity:float
-    total_sellprice:float
-    total_buyprice:float
-    customer_id:Optional[str]=None
-    payments:Dict[OrderPaymentEnums,float]
-    status:OrderStatusEnum
-    origin:OrderOriginEnum
-    datas:Optional[dict]=None
-    type:Optional[str]='NORMAL'
+    id: str
+    ui_id: str
+    shop_id: str
+    customer_id: Optional[str] = None
+    status: str
+    origin: str
+    calculation_infos: dict = {}
+    charges_infos: dict = {}
+    item_infos: dict = {}
+    payment_infos: List[dict] = []
+    date: datetime
+    additional_infos: Optional[dict] = None
 
 class UpdateOrderDbSchema(BaseModel):
-    id:str
-    shop_id:str
-    total_quantity:Optional[float]=None
-    total_sellprice:Optional[float]=None
-    total_buyprice:Optional[float]=None
-
-    status:Optional[OrderStatusEnum]=None
-    origin:Optional[OrderOriginEnum]=None
-
+    id: str
+    shop_id: str
+    status: Optional[str] = None
+    origin: Optional[str] = None
 
 class UpdateOrderItemDbSchema(BaseModel):
-    id:str
-    order_id:str
-    status:Optional[OrderStatusEnum]=None
+    id: str
+    order_id: str
+    status: Optional[str] = None
 
-class ReturnBulkOrderDbSchema(BaseModel):
-    id:str
-    items_id:List[str]
-    status:str
+class CreateReturnDbSchema(BaseModel):
+    id: str
+    ui_id: str
+    order_id: str
+    shop_id: str
+    customer_id: Optional[str] = None
+    total_refund_amount: float = 0.0
+    total_refund_qty: float = 0.0
+    payment_infos: dict = {}
+    status: str
+
+class CreateReturnItemDbSchema(BaseModel):
+    id: str
+    return_id: str
+    order_item_id: str
+    product_id: str
+    quantity: float
+    refund_amount: float = 0.0
+    reason: Optional[str] = None
+
+class CreateExchangeDbSchema(BaseModel):
+    id: str
+    ui_id: str
+    original_order_id: str
+    replacement_order_id: str
+    shop_id: str
+    customer_id: Optional[str] = None
+    additional_amount_paid: float
+    amount_refunded: float
+    clear_outstanding_amount: float
+    reason: Optional[str] = None
+    status: str
+
+class CreateExchangeItemDbSchema(BaseModel):
+    id: str
+    exchange_id: str
+    return_order_item_id: str
+    replacement_product_id: str
+    quantity_returned: float
+    quantity_replaced: float = 0.0
+    reason: Optional[str] = None

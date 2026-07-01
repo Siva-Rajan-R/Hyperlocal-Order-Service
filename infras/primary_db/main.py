@@ -15,6 +15,7 @@ async def init_orders_pg_db():
     try:
         ic("initializing pg db...")
         async with ENGINE.connect() as conn:
+            # await conn.run_sync(BASE.metadata.drop_all)
             await conn.run_sync(BASE.metadata.create_all)
             await conn.commit()
         ic("...Databse initialized successfully...")

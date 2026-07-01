@@ -1,14 +1,14 @@
 from models.repo_models.base_repo_model import BaseRepoModel
 from sqlalchemy.dialects.postgresql import Insert,JSONB
-from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema,UpdateOrderDbSchema,UpdateOrderItemDbSchema,ReturnBulkOrderDbSchema
-from schemas.v1.request_scheams.order_schema import DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,ReturnOrderSchema,ReturnBulkOrderSchema,ExchangeBulkOrderSchema,GetOrderByCustomerIdSchema
+from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema,UpdateOrderDbSchema,UpdateOrderItemDbSchema
+from schemas.v1.request_scheams.order_schema import DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,GetOrderByCustomerIdSchema
 from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_transaction
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
-from ..models.order_model import Orders,OrderItems,ExchangedOrderItems
+from ..models.order_model import Orders,OrderItems,Exchanges,ReturnItems,Returns,ExchangeItems
 from sqlalchemy import select,update,delete,func,or_,and_,String,bindparam,case,text
 from datetime import datetime, timezone
 from sqlalchemy.exc import ProgrammingError
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased,selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from icecream import ic
 from ..main import AsyncOrdersLocalSession
@@ -26,20 +26,14 @@ items_subq = (
             func.jsonb_agg(
                 func.jsonb_build_object(
                     "id", OrderItems.id,
-                    "inventory_id", OrderItems.inventory_id,
+                    "product_id", OrderItems.product_id,
                     "variant_id", OrderItems.variant_id,
                     "batch_id", OrderItems.batch_id,
-                    "serialno_id", OrderItems.serialno_id,
-                    "barcode", OrderItems.barcode,
                     "buy_price", OrderItems.buy_price,
                     "sell_price", OrderItems.sell_price,
                     "quantity", OrderItems.quantity,
                     "gst", OrderItems.gst,
-                    "reason",OrderItems.reason,
-                    "datas",OrderItems.datas,
-                    "status",OrderItems.status,
-                    "returned_quantity",OrderItems.returned_quantity,
-                    "serial_numbers", OrderItems.serial_numbers,
+                    "additional_infos",OrderItems.additional_infos,
                     "created_at", OrderItems.created_at
                 )
             ).filter(OrderItems.id.isnot(None)),
@@ -54,12 +48,8 @@ items_subq = (
 
 exchange_group_subq = (
     select(
-        ExchangedOrderItems.parent_order_id,
-        ExchangedOrderItems.replacement_order_id,
-
-        func.jsonb_agg(
-            ExchangedOrderItems.item_id
-        ).label("exchanged_item_ids"),
+        Exchanges.original_order_id.label('parent_order_id'),
+        Exchanges.replacement_order_id,
 
         func.jsonb_build_object(
             "id", replacement_order.id,
@@ -69,12 +59,7 @@ exchange_group_subq = (
             "status", replacement_order.status,
             
             "customer_id", replacement_order.customer_id,
-            "total_buyprice", replacement_order.total_buyprice,
-            "total_sellprice", replacement_order.total_sellprice,
-            "total_quantity", replacement_order.total_quantity,
-            "type", replacement_order.type,
-            "payments", replacement_order.payments,
-            "datas", replacement_order.datas,
+            "payments", replacement_order.payment_infos,
             "created_at", replacement_order.created_at,
             "updated_at", replacement_order.updated_at,
 
@@ -85,21 +70,17 @@ exchange_group_subq = (
                         func.jsonb_agg(
                             func.jsonb_build_object(
                                 "id", replacement_order_item.id,
-                                "inventory_id", replacement_order_item.inventory_id,
+                                "product_id", replacement_order_item.product_id,
                                 "variant_id", replacement_order_item.variant_id,
                                 "batch_id", replacement_order_item.batch_id,
-                                "serialno_id", replacement_order_item.serialno_id,
-                                "barcode", replacement_order_item.barcode,
+                                "serialno_infos", replacement_order_item.serialno_infos,
                                 "buy_price", replacement_order_item.buy_price,
                                 "sell_price", replacement_order_item.sell_price,
                                 "quantity", replacement_order_item.quantity,
                                 "gst", replacement_order_item.gst,
-                                "status", replacement_order_item.status,
-                                "reason", replacement_order_item.reason,
-                                "datas", replacement_order_item.datas,
-                                "serial_numbers", replacement_order_item.serial_numbers,
+                                "additional_infos", replacement_order_item.additional_infos,
                                 "created_at", replacement_order_item.created_at,
-                                "returned_quantity",replacement_order_item.returned_quantity
+                                "quantity",replacement_order_item.quantity
                             )
                         ),
                         func.cast("[]", JSONB)
@@ -115,11 +96,11 @@ exchange_group_subq = (
     )
     .outerjoin(
         replacement_order,
-        replacement_order.id == ExchangedOrderItems.replacement_order_id
+        replacement_order.id == Exchanges.replacement_order_id
     )
     .group_by(
-        ExchangedOrderItems.parent_order_id,
-        ExchangedOrderItems.replacement_order_id,
+        Exchanges.original_order_id,
+        Exchanges.replacement_order_id,
 
         replacement_order.id,
         replacement_order.ui_id,
@@ -127,15 +108,10 @@ exchange_group_subq = (
         replacement_order.origin,
         replacement_order.status,
         replacement_order.customer_id,
-        replacement_order.total_buyprice,
-        replacement_order.total_sellprice,
-        replacement_order.total_quantity,
-        replacement_order.type,
         replacement_order.created_at,
         replacement_order.updated_at,
     )
 ).subquery()
-
 
 
 
@@ -147,10 +123,7 @@ exchanged_items_subq = (
             func.jsonb_agg(
                 func.jsonb_build_object(
                     "replacement_order",
-                    exchange_group_subq.c.replacement_order,
-
-                    "exchanged_items",
-                    exchange_group_subq.c.exchanged_item_ids
+                    exchange_group_subq.c.replacement_order
                 )
             ),
             func.cast("[]", JSONB)
@@ -171,12 +144,12 @@ class OrdersRepo(BaseRepoModel):
             Orders.origin,
             Orders.status,
             Orders.customer_id,
-            Orders.total_buyprice,
-            Orders.total_sellprice,
-            Orders.total_quantity,
-            Orders.type,
-            Orders.datas,
-            Orders.payments,
+            Orders.calculation_infos,
+            Orders.charges_infos,
+            Orders.item_infos,
+            Orders.payment_infos,
+            Orders.date,
+            Orders.additional_infos,
             Orders.created_at,
             Orders.updated_at,
             
@@ -184,7 +157,7 @@ class OrdersRepo(BaseRepoModel):
         super().__init__(session)
 
     def _build_filter_conds(self, data):
-        conds = [Orders.type != "EXCHANGE"]
+        conds = []
         if hasattr(data, 'shop_id') and getattr(data, 'shop_id'):
             conds.append(Orders.shop_id == data.shop_id)
         if hasattr(data, 'customer_id') and getattr(data, 'customer_id'):
@@ -194,7 +167,7 @@ class OrdersRepo(BaseRepoModel):
         if hasattr(data, 'origin') and getattr(data, 'origin'):
             conds.append(func.lower(Orders.origin) == data.origin.lower())
         if hasattr(data, 'payment_method') and getattr(data, 'payment_method'):
-            conds.append(Orders.payments.has_key(data.payment_method.upper()))
+            conds.append(func.cast(Orders.payment_infos, String).ilike(f"%{data.payment_method.upper()}%"))
         if hasattr(data, 'from_date') and getattr(data, 'from_date'):
             from_dt = datetime.strptime(getattr(data, 'from_date'), "%Y-%m-%d").replace(tzinfo=timezone.utc)
             conds.append(Orders.created_at >= from_dt)
@@ -232,10 +205,11 @@ class OrdersRepo(BaseRepoModel):
             Insert(
                 Orders
             )
-            .values(**data.model_dump(mode='json'))
+            .values(**data.model_dump())
             .returning(*self.order_cols)
         )
         res=(await self.session.execute(stmt)).mappings().one_or_none()
+        # self.session.commit()
         return res
     
     @start_db_transaction
@@ -244,7 +218,7 @@ class OrdersRepo(BaseRepoModel):
             Insert(
                 OrderItems
             )
-            .values(**data.model_dump(mode='json'))
+            .values(**data.model_dump())
             .returning(*self.order_cols)
         )
         res=(await self.session.execute(stmt)).mappings().one_or_none()
@@ -301,29 +275,6 @@ class OrdersRepo(BaseRepoModel):
     
 
     @start_db_transaction
-    async def update_order_item_bulk(self,data:ReturnBulkOrderDbSchema):
-
-        if not data.items_id:
-            return []
-
-        stmt = (
-            update(OrderItems)
-            .where(
-                OrderItems.order_id == data.id,
-                OrderItems.id.in_(data.items_id)
-            )
-            .values(
-                status=data.status
-            )
-            .returning(OrderItems.id)
-        )
-
-        res = await self.session.execute(stmt)
-        ic(res)
-        return res.scalars().all()
-    
-
-    @start_db_transaction
     async def update_order_item_bulk_adv(self,data:List[dict]):
         ic(data)
         if not data:
@@ -371,28 +322,166 @@ class OrdersRepo(BaseRepoModel):
 
         created_at=func.date(func.timezone(data.timezone.value,Orders.created_at))
 
-        order_stmt = (
-            select(
-                *self.order_cols,
+        stmt = (
+            select(Orders)
+            .options(
+                # Order Items
+                selectinload(Orders.items).selectinload(OrderItems.return_items),
+                selectinload(Orders.items).selectinload(OrderItems.exchange_items),
 
-                items_subq.c["items"].label("items"),
-                exchanged_items_subq.c["exchanged_items"].label("exchanged_items")
+                # Returns
+                selectinload(Orders.returns).selectinload(Returns.items),
+
+                # Exchanges
+                selectinload(Orders.exchanges).selectinload(Exchanges.items),
             )
-            .outerjoin(
-                items_subq,
-                items_subq.c.order_id == Orders.id
-            )
-            .outerjoin(
-                    exchanged_items_subq,
-                    exchanged_items_subq.c.parent_order_id == Orders.id
-                )
-            .where(*self._build_filter_conds(data))
-            .offset(cursor)
-            .limit(data.limit)
         )
-        orders=(await self.session.execute(order_stmt)).mappings().all()
 
-        return orders
+        result = await self.session.execute(stmt)
+        orders = result.scalars().all()
+
+        if not orders:
+            return None
+        for order in orders:
+            response = {
+                "id": order.id,
+                "sequence_id": order.sequence_id,
+                "ui_id": order.ui_id,
+                "shop_id": order.shop_id,
+                "customer_id": order.customer_id,
+                "status": order.status,
+                "origin": order.origin,
+                "calculation_infos": order.calculation_infos,
+                "charges_infos": order.charges_infos,
+                "payment_infos": order.payment_infos,
+                "date": order.date,
+                "additional_infos": order.additional_infos,
+                "created_at": order.created_at,
+                "updated_at": order.updated_at,
+
+                "items": [],
+                "returns": [],
+                "exchanges": []
+            }
+
+            # -------------------------
+            # Order Items
+            # -------------------------
+            for item in order.items:
+                response["items"].append({
+                    "id": item.id,
+                    "product_id": item.product_id,
+                    "variant_id": item.variant_id,
+                    "batch_id": item.batch_id,
+                    "serialno_infos": item.serialno_infos,
+                    "gst": item.gst,
+                    "quantity": item.quantity,
+                    "buy_price": item.buy_price,
+                    "sell_price": item.sell_price,
+                    "additional_infos": item.additional_infos,
+
+                    "returned_quantity": sum(
+                        ri.quantity
+                        for ri in item.return_items
+                    ),
+
+                    "exchanged_quantity": sum(
+                        ei.quantity
+                        for ei in item.exchange_items
+                    ),
+
+                    "returns": [
+                        {
+                            "id": ri.id,
+                            "return_id": ri.return_id,
+                            "quantity": ri.quantity,
+                            "refund_amount": ri.refund_amount,
+                            "reason": ri.reason,
+                            "created_at": ri.created_at
+                        }
+                        for ri in item.return_items
+                    ],
+
+                    "exchanges": [
+                        {
+                            "id": ei.id,
+                            "exchange_id": ei.exchange_id,
+                            "quantity": ei.quantity,
+                            "exchange_amount": ei.exchange_amount,
+                            "reason": ei.reason,
+                            "created_at": ei.created_at
+                        }
+                        for ei in item.exchange_items
+                    ]
+                })
+
+            # -------------------------
+            # Returns
+            # -------------------------
+            for ret in order.returns:
+                response["returns"].append({
+                    "id": ret.id,
+                    "sequence_id": ret.sequence_id,
+                    "status": ret.status,
+                    "total_refund_amount": ret.total_refund_amount,
+                    "total_refund_qty": ret.total_refund_qty,
+                    "payment_infos": ret.payment_infos,
+                    "created_at": ret.created_at,
+                    "updated_at": ret.updated_at,
+
+                    "items": [
+                        {
+                            "id": item.id,
+                            "order_item_id": item.order_item_id,
+                            "product_id": item.product_id,
+                            "quantity": item.quantity,
+                            "refund_amount": item.refund_amount,
+                            "reason": item.reason,
+                        }
+                        for item in ret.items
+                    ]
+                })
+
+            # -------------------------
+            # Exchanges
+            # -------------------------
+            for exch in order.exchanges:
+                response["exchanges"].append({
+                    "id": exch.id,
+                    "sequence_id": exch.sequence_id,
+                    "status": exch.status,
+                    "payment_status": exch.payment_status,
+                    "reason": exch.reason,
+
+                    "replacement_order_id": exch.replacement_order_id,
+
+                    "total_exchanged_amount": exch.total_exchanged_amount,
+                    "total_exchanged_qty": exch.total_exchanged_qty,
+
+                    "total_replacement_amount": exch.total_replacement_amount,
+                    "total_replacement_qty": exch.total_replacement_qty,
+
+                    "payment_infos": exch.payment_infos,
+
+                    "created_at": exch.created_at,
+                    "updated_at": exch.updated_at,
+
+                    "items": [
+                        {
+                            "id": item.id,
+                            "order_item_id": item.order_item_id,
+                            "product_id": item.product_id,
+                            "quantity": item.quantity,
+                            "exchange_amount": item.exchange_amount,
+                            "reason": item.reason,
+                        }
+                        for item in exch.items
+                    ]
+                })
+            
+        ic(response)
+
+        return response
     
 
     async def getby_shop_id(self,data:GetOrderByShopIdSchema)-> List[dict] | list:
@@ -436,55 +525,327 @@ class OrdersRepo(BaseRepoModel):
         ic(data.shop_id)
         created_at=func.date(func.timezone(data.timezone.value,Orders.created_at))
 
-        order_stmt=(
-            select(
-                *self.order_cols,
+        stmt = (
+            select(Orders)
+            .options(
+                # Order Items
+                selectinload(Orders.items).selectinload(OrderItems.return_items),
+                selectinload(Orders.items).selectinload(OrderItems.exchange_items),
 
-                items_subq.c["items"].label("items"),
-                exchanged_items_subq.c["exchanged_items"].label("exchanged_items")
-            )
-            .outerjoin(
-                items_subq,
-                items_subq.c.order_id == Orders.id
-            )
-            .outerjoin(
-                    exchanged_items_subq,
-                    exchanged_items_subq.c.parent_order_id == Orders.id
-            )
-            .where(*self._build_filter_conds(data))
-            .offset(offset=cursor).limit(data.limit))
+                # Returns
+                selectinload(Orders.returns).selectinload(Returns.items),
 
-        orders=(await self.session.execute(order_stmt)).mappings().all()
+                # Exchanges
+                selectinload(Orders.exchanges).selectinload(Exchanges.items),
+            )
+            .where(Orders.customer_id == data.customer_id)
+        )
 
-        return orders
+        result = await self.session.execute(stmt)
+        order = result.scalar_one_or_none()
+
+        if order is None:
+            return None
+
+        response = {
+            "id": order.id,
+            "sequence_id": order.sequence_id,
+            "ui_id": order.ui_id,
+            "shop_id": order.shop_id,
+            "customer_id": order.customer_id,
+            "status": order.status,
+            "origin": order.origin,
+            "calculation_infos": order.calculation_infos,
+            "charges_infos": order.charges_infos,
+            "payment_infos": order.payment_infos,
+            "date": order.date,
+            "additional_infos": order.additional_infos,
+            "created_at": order.created_at,
+            "updated_at": order.updated_at,
+
+            "items": [],
+            "returns": [],
+            "exchanges": []
+        }
+
+        # -------------------------
+        # Order Items
+        # -------------------------
+        for item in order.items:
+            response["items"].append({
+                "id": item.id,
+                "product_id": item.product_id,
+                "variant_id": item.variant_id,
+                "batch_id": item.batch_id,
+                "serialno_infos": item.serialno_infos,
+                "gst": item.gst,
+                "quantity": item.quantity,
+                "buy_price": item.buy_price,
+                "sell_price": item.sell_price,
+                "additional_infos": item.additional_infos,
+
+                "returned_quantity": sum(
+                    ri.quantity
+                    for ri in item.return_items
+                ),
+
+                "exchanged_quantity": sum(
+                    ei.quantity
+                    for ei in item.exchange_items
+                ),
+
+                "returns": [
+                    {
+                        "id": ri.id,
+                        "return_id": ri.return_id,
+                        "quantity": ri.quantity,
+                        "refund_amount": ri.refund_amount,
+                        "reason": ri.reason,
+                        "created_at": ri.created_at
+                    }
+                    for ri in item.return_items
+                ],
+
+                "exchanges": [
+                    {
+                        "id": ei.id,
+                        "exchange_id": ei.exchange_id,
+                        "quantity": ei.quantity,
+                        "exchange_amount": ei.exchange_amount,
+                        "reason": ei.reason,
+                        "created_at": ei.created_at
+                    }
+                    for ei in item.exchange_items
+                ]
+            })
+
+        # -------------------------
+        # Returns
+        # -------------------------
+        for ret in order.returns:
+            response["returns"].append({
+                "id": ret.id,
+                "sequence_id": ret.sequence_id,
+                "status": ret.status,
+                "total_refund_amount": ret.total_refund_amount,
+                "total_refund_qty": ret.total_refund_qty,
+                "payment_infos": ret.payment_infos,
+                "created_at": ret.created_at,
+                "updated_at": ret.updated_at,
+
+                "items": [
+                    {
+                        "id": item.id,
+                        "order_item_id": item.order_item_id,
+                        "product_id": item.product_id,
+                        "quantity": item.quantity,
+                        "refund_amount": item.refund_amount,
+                        "reason": item.reason,
+                    }
+                    for item in ret.items
+                ]
+            })
+
+        # -------------------------
+        # Exchanges
+        # -------------------------
+        for exch in order.exchanges:
+            response["exchanges"].append({
+                "id": exch.id,
+                "sequence_id": exch.sequence_id,
+                "status": exch.status,
+                "payment_status": exch.payment_status,
+                "reason": exch.reason,
+
+                "replacement_order_id": exch.replacement_order_id,
+
+                "total_exchanged_amount": exch.total_exchanged_amount,
+                "total_exchanged_qty": exch.total_exchanged_qty,
+
+                "total_replacement_amount": exch.total_replacement_amount,
+                "total_replacement_qty": exch.total_replacement_qty,
+
+                "payment_infos": exch.payment_infos,
+
+                "created_at": exch.created_at,
+                "updated_at": exch.updated_at,
+
+                "items": [
+                    {
+                        "id": item.id,
+                        "order_item_id": item.order_item_id,
+                        "product_id": item.product_id,
+                        "quantity": item.quantity,
+                        "exchange_amount": item.exchange_amount,
+                        "reason": item.reason,
+                    }
+                    for item in exch.items
+                ]
+            })
+
+        return response
 
     async def getby_id(self,data:GetOrderByIdSchema)-> dict | None:
         created_at=func.date(func.timezone(data.timezone.value,Orders.created_at))
-        order_stmt=(
-            select(
-                *self.order_cols,
+        stmt = (
+            select(Orders)
+            .options(
+                # Order Items
+                selectinload(Orders.items).selectinload(OrderItems.return_items),
+                selectinload(Orders.items).selectinload(OrderItems.exchange_items),
 
-                items_subq.c["items"].label("items"),
-                exchanged_items_subq.c["exchanged_items"].label("exchanged_items")
+                # Returns
+                selectinload(Orders.returns).selectinload(Returns.items),
+
+                # Exchanges
+                selectinload(Orders.exchanges).selectinload(Exchanges.items),
             )
-            .outerjoin(
-                items_subq,
-                items_subq.c.order_id == Orders.id
-            )
-            .outerjoin(
-                    exchanged_items_subq,
-                    exchanged_items_subq.c.parent_order_id == Orders.id
-            )
-            .where(
-                Orders.type!="EXCHANGE",
-                Orders.shop_id==data.shop_id,
-                Orders.id==data.id
-            )
+            .where(Orders.id == data.id,Orders.shop_id==data.shop_id)
         )
 
-        order=(await self.session.execute(order_stmt)).mappings().one_or_none()
+        result = await self.session.execute(stmt)
+        order = result.scalar_one_or_none()
 
-        return order
+        if order is None:
+            return None
+
+        response = {
+            "id": order.id,
+            "sequence_id": order.sequence_id,
+            "ui_id": order.ui_id,
+            "shop_id": order.shop_id,
+            "customer_id": order.customer_id,
+            "status": order.status,
+            "origin": order.origin,
+            "calculation_infos": order.calculation_infos,
+            "charges_infos": order.charges_infos,
+            "payment_infos": order.payment_infos,
+            "date": order.date,
+            "additional_infos": order.additional_infos,
+            "created_at": order.created_at,
+            "updated_at": order.updated_at,
+
+            "items": [],
+            "returns": [],
+            "exchanges": []
+        }
+
+        # -------------------------
+        # Order Items
+        # -------------------------
+        for item in order.items:
+            response["items"].append({
+                "id": item.id,
+                "product_id": item.product_id,
+                "variant_id": item.variant_id,
+                "batch_id": item.batch_id,
+                "serialno_infos": item.serialno_infos,
+                "gst": item.gst,
+                "quantity": item.quantity,
+                "buy_price": item.buy_price,
+                "sell_price": item.sell_price,
+                "additional_infos": item.additional_infos,
+
+                "returned_quantity": sum(
+                    ri.quantity
+                    for ri in item.return_items
+                ),
+
+                "exchanged_quantity": sum(
+                    ei.quantity
+                    for ei in item.exchange_items
+                ),
+
+                "returns": [
+                    {
+                        "id": ri.id,
+                        "return_id": ri.return_id,
+                        "quantity": ri.quantity,
+                        "refund_amount": ri.refund_amount,
+                        "reason": ri.reason,
+                        "created_at": ri.created_at
+                    }
+                    for ri in item.return_items
+                ],
+
+                "exchanges": [
+                    {
+                        "id": ei.id,
+                        "exchange_id": ei.exchange_id,
+                        "quantity": ei.quantity,
+                        "exchange_amount": ei.exchange_amount,
+                        "reason": ei.reason,
+                        "created_at": ei.created_at
+                    }
+                    for ei in item.exchange_items
+                ]
+            })
+
+        # -------------------------
+        # Returns
+        # -------------------------
+        for ret in order.returns:
+            response["returns"].append({
+                "id": ret.id,
+                "sequence_id": ret.sequence_id,
+                "status": ret.status,
+                "total_refund_amount": ret.total_refund_amount,
+                "total_refund_qty": ret.total_refund_qty,
+                "payment_infos": ret.payment_infos,
+                "created_at": ret.created_at,
+                "updated_at": ret.updated_at,
+
+                "items": [
+                    {
+                        "id": item.id,
+                        "order_item_id": item.order_item_id,
+                        "product_id": item.product_id,
+                        "quantity": item.quantity,
+                        "refund_amount": item.refund_amount,
+                        "reason": item.reason,
+                    }
+                    for item in ret.items
+                ]
+            })
+
+        # -------------------------
+        # Exchanges
+        # -------------------------
+        for exch in order.exchanges:
+            response["exchanges"].append({
+                "id": exch.id,
+                "sequence_id": exch.sequence_id,
+                "status": exch.status,
+                "payment_status": exch.payment_status,
+                "reason": exch.reason,
+
+                "replacement_order_id": exch.replacement_order_id,
+
+                "total_exchanged_amount": exch.total_exchanged_amount,
+                "total_exchanged_qty": exch.total_exchanged_qty,
+
+                "total_replacement_amount": exch.total_replacement_amount,
+                "total_replacement_qty": exch.total_replacement_qty,
+
+                "payment_infos": exch.payment_infos,
+
+                "created_at": exch.created_at,
+                "updated_at": exch.updated_at,
+
+                "items": [
+                    {
+                        "id": item.id,
+                        "order_item_id": item.order_item_id,
+                        "product_id": item.product_id,
+                        "quantity": item.quantity,
+                        "exchange_amount": item.exchange_amount,
+                        "reason": item.reason,
+                    }
+                    for item in exch.items
+                ]
+            })
+
+        return response
     
 
     async def search(self,shop_id:str,query:str, limit = 5, *args, **kwargs):
