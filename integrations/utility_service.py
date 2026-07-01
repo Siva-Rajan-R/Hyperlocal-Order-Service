@@ -2,7 +2,7 @@ import httpx
 from icecream import ic
 
 
-BASE_URL="http://127.0.0.1:8010"
+BASE_URL="http://127.0.0.1:8001"
 async def get_ui_id(shop_id:str,entity_name:str="ORDER"):
     try:
         async with httpx.AsyncClient() as request:
