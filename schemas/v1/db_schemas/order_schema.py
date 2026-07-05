@@ -25,7 +25,7 @@ class CreateOrderDbSchema(BaseModel):
     calculation_infos: dict = {}
     charges_infos: dict = {}
     item_infos: dict = {}
-    payment_infos: List[dict] = []
+    payment_infos: dict = {}
     date: datetime
     additional_infos: Optional[dict] = None
 

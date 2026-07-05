@@ -52,12 +52,13 @@ class OrdersService:
         saga_id:str=generate_uuid()
         product_ids=[]
         for item in cart_data:
-                ic(item)
-                product_ids.append(item['product_id'])
-
+            ic(item)
+            product_ids.append(item['product_id'])
+        ic(cart_data)
         order_data={**data.model_dump(mode="json"),"items":cart_data}
 
         saga_data={"orders":order_data}
+        ic(product_ids)
 
         if data.customer_id:
             await SagaProducer.emit(
@@ -104,7 +105,7 @@ class OrdersService:
                             "FETCHING_PRODUCTS":SagaStepsValueEnum.PENDING
                         },
                         execution=SagaStateExecutionTypDict(
-                            step="FETCHING_PPRODUCTS",
+                            step="FETCHING_PRODUCTS",
                             service="PRODUCTS"
                         ),
                         data=saga_data

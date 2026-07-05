@@ -94,6 +94,7 @@ class MessagingQueueOrderReturnProducer:
 
         order_toadd=order_return_payload.get("return_toadd")
         order_items_toadd=order_return_payload.get("return_items_toadd")
+        ic(order_toadd,order_items_toadd)
 
 
         if current_step == "PRODUCT_VERIFY_UPDATE":
@@ -103,7 +104,7 @@ class MessagingQueueOrderReturnProducer:
 
                 await return_repo_obj.create_return_with_items(
                     return_obj=Returns(**order_toadd),
-                    return_items=[ReturnItems(**itm) for itm in order_items_toadd]
+                    return_items=[ReturnItems(**{k: v for k, v in itm.items() if k != 'serialno_infos'}) for itm in order_items_toadd]
                 )
 
                 ic("Return Process COmpleted")
@@ -128,6 +129,23 @@ class MessagingQueueOrderReturnProducer:
                                 "refund_amount": itm.get("refund_amount", 0.0),
                                 "reason": itm.get("reason", "")
                             }
+                            
+                            # Find the original item from existing_order to copy its extra data
+                            original_item = next((orig for orig in existing_order.get("items", []) if orig.get("id") == itm.get("order_item_id")), None)
+                            if original_item:
+                                formatted_item.update({
+                                    "name": original_item.get("name"),
+                                    "ui_id": original_item.get("ui_id"),
+                                    "category_infos": original_item.get("category_infos"),
+                                    "unit_infos": original_item.get("unit_infos"),
+                                    "variant_infos": original_item.get("variant_infos"),
+                                    "batch_infos": original_item.get("batch_infos"),
+                                    "serialno_infos": original_item.get("serialno_infos"),
+                                    "buy_price": original_item.get("buy_price"),
+                                    "sell_price": original_item.get("sell_price"),
+                                    "gst": original_item.get("gst")
+                                })
+
                             return_items_formatted.append(formatted_item)
                             
                             # Update root items
@@ -142,9 +160,10 @@ class MessagingQueueOrderReturnProducer:
                                         existing_item["returns"] = []
                                         
                                     existing_item["returns"].append({
-                                        "id": generate_uuid(),
-                                        "return_id": order_toadd.get("id"),
+                                        "id": order_toadd.get("id"),
+                                        "order_item_id": itm.get("order_item_id"),
                                         "quantity": itm.get("quantity", 0),
+                                        "serialno_infos": itm.get("serialno_infos") or [],
                                         "refund_amount": itm.get("refund_amount", 0.0),
                                         "reason": itm.get("reason", ""),
                                         "created_at": order_toadd.get("created_at")
@@ -158,7 +177,7 @@ class MessagingQueueOrderReturnProducer:
                             "status": order_toadd.get("status", "COMPLETED"),
                             "total_refund_amount": order_toadd.get("total_refund_amount", 0.0),
                             "total_refund_qty": order_toadd.get("total_refund_qty", 0.0),
-                            "payment_infos": order_toadd.get("payment_infos", []),
+                            "payment_infos": order_toadd.get("payment_infos", {}),
                             "created_at": order_toadd.get("created_at"),
                             "updated_at": order_toadd.get("updated_at"),
                             "items": return_items_formatted

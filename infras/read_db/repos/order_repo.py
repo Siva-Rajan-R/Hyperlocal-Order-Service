@@ -34,6 +34,66 @@ class OrderReadDbRepo:
         except Exception as e:
             ic(f"Error replacing order in Read DB: {e}")
             return False
+    
+    @classmethod
+    async def get_all(
+        cls,
+    ) -> List[dict]:
+        try:
+            query = {}
+
+            cursor = ORDERS_COLLECTION.find(
+                query,
+                {"_id": 0}
+            )
+
+            return await cursor.to_list(length=None)
+
+        except Exception as e:
+            ic(f"Error in get_all: {e}")
+            return []
+
+    @classmethod
+    async def get_by_shop_id(
+        cls,
+        shop_id: str,
+    ) -> List[dict]:
+        try:
+            query = {
+                "shop_id": shop_id
+            }
+
+            cursor = ORDERS_COLLECTION.find(
+                query,
+                {"_id": 0}
+            )
+
+            return await cursor.to_list(length=None)
+
+        except Exception as e:
+            ic(f"Error in get_by_shop_id: {e}")
+            return []
+
+    @classmethod
+    async def get_by_id(
+        cls,
+        shop_id: str,
+        order_id: str,
+    ) -> Optional[dict]:
+        try:
+            query = {
+                "shop_id": shop_id,
+                "id": order_id
+            }
+
+            return await ORDERS_COLLECTION.find_one(
+                query,
+                {"_id": 0}
+            )
+
+        except Exception as e:
+            ic(f"Error in get_by_id: {e}")
+            return None
 
     @classmethod
     async def delete_order(cls, order_id: str, shop_id: str):
@@ -121,25 +181,6 @@ class OrderReadDbRepo:
             
         return {"datas": orders}
 
-    @classmethod
-    async def getby_shop_id(cls, data: GetOrderByShopIdSchema) -> Union[List[dict], dict]:
-        offset = data.offset if data.offset > 0 else 1
-        skip = (offset - 1) * data.limit
-        
-        base_query = {"type": {"$ne": "EXCHANGE"}, "shop_id": data.shop_id}
-        query = cls._build_search_query(base_query, data.query)
-        
-        cursor = ORDERS_COLLECTION.find(query).sort("created_at", -1).skip(skip).limit(data.limit)
-        orders = await cursor.to_list(length=data.limit)
-        
-        for order in orders:
-            order["_id"] = str(order["_id"])
-            
-        if data.offset in (0, 1):
-            overall_values = await cls.get_overall_values(query)
-            return {"overall_datas": overall_values, "datas": orders}
-            
-        return {"datas": orders}
 
     @classmethod
     async def getby_customer_id(cls, data: GetOrderByCustomerIdSchema) -> Union[List[dict], dict]:
@@ -161,15 +202,7 @@ class OrderReadDbRepo:
             
         return {"datas": orders}
 
-    @classmethod
-    async def getby_id(cls, data: GetOrderByIdSchema) -> Optional[dict]:
-        query = {"shop_id": data.shop_id, "id": data.id, "type": {"$ne": "EXCHANGE"}}
-        order = await ORDERS_COLLECTION.find_one(query)
-        
-        if order:
-            order["_id"] = str(order["_id"])
-            
-        return order
+
 
     @classmethod
     async def search(cls, shop_id: str, query_str: str, limit: int = 5) -> List[dict]:

@@ -44,7 +44,7 @@ class ReturnService:
         customer_id=order_data['customer_id']
         date=order_data['date']
         origin=order_data['origin']
-        payment_infos=[data.payment_infos]
+        payment_infos=data.payment_infos
         status=order_data['status']
         shop_id=data.shop_id
 
@@ -104,14 +104,20 @@ class ReturnService:
                     status_code=400,
                     detail="Return Amount need to enter proeprly"
                 )
+            founded_serialno=[]
+            existing_serial_ids = [s.get('id') for s in (items_map[inc_item_id].get('serialno_infos') or [])]
             
             for serialno in (itm.get("serialno_infos") or []):
-                if serialno['id'] not in items_map[inc_item_id]['serialno_infos']:
+                if serialno['id'] not in existing_serial_ids:
                     ic("Serialno not found")
                     raise HTTPException(
                         status_code=400,
                         detail="Serialno not found"
                     )
+                
+                matched_sn = next((s for s in (items_map[inc_item_id].get('serialno_infos') or []) if s.get('id') == serialno['id']), None)
+                if matched_sn:
+                    founded_serialno.append(matched_sn)
 
             
             products_toupdate.append(
@@ -119,8 +125,8 @@ class ReturnService:
                     "shop_id":shop_id,
                     "product_id":items_map[inc_item_id]['product_id'],
                     "variant_id":items_map[inc_item_id]['variant_id'],
-                    "batch_infos":items_map[inc_item_id]['batch_id'] if items_map[inc_item_id]['batch_id'] else None,
-                    "serialno_infos":items_map[inc_item_id]['serialno_infos'],
+                    "batch_infos":{"id":items_map[inc_item_id]['batch_id']} if items_map[inc_item_id]['batch_id'] else None,
+                    "serialno_infos":founded_serialno,
                     "stocks":inc_quantity,
                     "entity_name":"OFFLINE_SALES_RETURN",
                     "type":"INCREMENT",
@@ -139,7 +145,8 @@ class ReturnService:
                     'product_id':items_map[inc_item_id]['product_id'],
                     'quantity':inc_quantity,
                     'refund_amount':total_return_qty_amount,
-                    'reason':itm['reason']
+                    'reason':itm['reason'],
+                    'serialno_infos': founded_serialno
                 }
             )
 
@@ -229,9 +236,9 @@ class ReturnService:
                 payload=customer_outst_toadd,
                 headers={
                     "saga_id":generate_uuid(),
-                    "reply_entity_name":"null",
-                    "reply_exchange":"null",
-                    "reply_key":"null",
+                    "reply_entity_name":"None",
+                    "reply_exchange":"None",
+                    "reply_key":"None",
                     "service_name":"CUSTOMERS",
                     "entity_name":"clear_customer_outstanding",
                     "service":"CUSTOMERS",

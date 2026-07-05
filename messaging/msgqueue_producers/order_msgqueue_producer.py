@@ -107,190 +107,196 @@ class MessagingQueueOrderProducer:
             )
 
 
-        if current_step in ["FETCHING_PRODUCTS", "FETCHING_PPRODUCTS"]:
-            ic(f"Skipping order creation. Current step is: {current_step}")
-
-            products_data = datas.get("products", [])
+        # STEP-3: PARSE AND PERSIST TRANSACTION RECORD
+        if current_step == "FETCHING_PRODUCTS":
             order_id = generate_uuid()
-            order_items_toadd = []
+            
             ui_id_res = await get_ui_id(shop_id=order_payload.get('shop_id'))
-            ic(ui_id_res)
-            ui_id=f"{ui_id_res.get("prefix")}-{ui_id_res.get("current_number")}"
-            ic(ui_id)
-            item_infos={
-                    'total_items':0,
-                    'total_stocks':0,
-                    'total_cost':0,
-                    'total_gst_amount':0
-                }
-            shop_id=order_payload['shop_id']
+            if isinstance(ui_id_res, dict) and "prefix" in ui_id_res:
+                ui_id = f"{ui_id_res.get('prefix')}-{ui_id_res.get('current_number')}"
+            else:
+                ui_id = f"PUR-{int(datetime.datetime.utcnow().timestamp())}"
+            ic(cart_items)
+
+            product_res = datas.get("products") or []
+            shop_id = order_payload.get("shop_id")
+            calculation_infos = order_payload.get("calculation_infos") or {}
+            charges_infos = order_payload.get("charges_infos") or {}
+            payment_infos = order_payload.get("payment_infos") or {}
             origin=order_payload['origin']
             status=order_payload['status']
-            charges_infos=order_payload['charges_infos']
-            calculation_infos=order_payload['calculation_infos']
-            payment_infos=order_payload['payment_infos']
+            customer_id=order_payload['customer_id']
             ord_date=order_payload.get("date", datetime.datetime.now()) or datetime.datetime.now()
             if isinstance(ord_date, str):
                 ord_date = datetime.datetime.strptime(
                     ord_date,
                     "%Y-%m-%d"
                 ).date()
-            customer_id=order_payload['customer_id']
 
-            validated_data={}
+            item_infos = {
+                'total_order_items': 0,
+                'total_order_qty': 0,
+                'total_order_cost': 0,
+                'total_order_amount': 0
+            }
+            
+            validated_payload_map: Dict[str, List[dict]] = {}
             for prod in cart_items:
-                ic(prod)
-                product_id=prod['product_id']
-                if product_id not in validated_data:
-                    validated_data[product_id]=[]
-                
-                validated_data[product_id].append(prod)
-            ic(validated_data)
-
+                p_id = prod['product_id']
+                if p_id not in validated_payload_map:
+                    validated_payload_map[p_id] = []
+                validated_payload_map[p_id].append(prod)
 
             read_items = []
+            order_items_toadd = []
 
-            for prod in products_data:
-                ic(prod)
-                product_id=prod['id']
-                product_name=prod['name']
-                prod_ui_id=prod['ui_id']
-                has_variant=prod['type_infos']['has_variant']
-                has_batch=prod['type_infos']['has_batch']
-                has_serialno=prod['type_infos']['has_serialno']
-                variant_id=None
-                batch_id=None
-                variant_name=''
-                batch_infos={}
-                serialno_infos=[]
-                stock_infos={}
-                stl_infos={}
-                rop_infos={}
-                pricing_infos={}
-                gst=prod['gst']
-
-                category_id = prod.get('category_id')
-                unit_id = prod.get('unit_id')
-                category_name = ""
-                unit_name = ""
-                if category_id:
-                    cat_res = await get_shop_category(shop_id=shop_id, category_id=category_id)
-                    category_name = cat_res.get("name", "") if isinstance(cat_res, dict) else ""
-                if unit_id:
-                    unit_res = await get_shop_unit(shop_id=shop_id, unit_id=unit_id)
-                    unit_name = unit_res.get("name", "") if isinstance(unit_res, dict) else ""
-
-                stock_before=0
-                stock_after=0
-                stocks=0
-
-                pur_items_toadd=[]
-                pur_pricing_toadd=[]
-                pur_stl_toadd=[]
-                pur_rop_toadd=[]
-
-
-                validate_data_res=validated_data.get(product_id)
-                for itm in validate_data_res:
-                    batch_id=itm['batch_id']
-                    variant_id=itm['variant_id']
-                    if has_variant:
-                        if variant_id in prod['variants']:
-                            stock_infos=prod['variants'][variant_id].get("stock_infos",{})
-                    
-                            variant_name=prod['variants']['name']
-                            if has_batch and not has_serialno:
-                                batch_infos=prod['variants'][variant_id]['batch_infos'].get("batch_id",{})
-                                stock_infos=batch_infos['stock_infos']
-                            
-                            if has_serialno and not has_batch:
-                                serialno_infos=prod['variants'][variant_id].get('serialno_infos',{})
-
-                            if has_serialno and has_batch:
-                                batch_infos=prod['variants'][variant_id]['batch_infos'].get("batch_id",{})
-                                stock_infos=batch_infos['stock_infos']
-                                serialno_infos=batch_infos['serialno_infos']
-                            
-                            stl_infos=prod['variants'][variant_id].get("storage_location_infos",{})
-                            rop_infos=prod['variants'][variant_id].get("reorder_point_infos",{})
-                            pricing_infos=prod['variants'][variant_id]['pricing_infos']
-
-
-                            stocks=itm['qty']
-                            stock_before=stock_infos['physical_stocks']-stocks
-                            stock_after=stock_infos['physical_stocks']+stocks
-
-
-
-                    else:
-
-                        stock_infos=stock_infos=prod.get("stock_infos",{})
-
-                        if has_batch and not serialno_infos:
-                            batch_infos=prod['batch_infos'][batch_id]
-                            stock_infos=batch_infos['stock_infos']
-                        
-                        if has_serialno and not has_batch:
-                            serialno_infos=prod['serialno_infos']
-                        
-                        if has_serialno and has_batch:
-                            batch_infos=prod['batch_infos'][batch_id]
-                            stock_infos=batch_infos['stock_infos']
-                            serialno_infos=batch_infos['serialno_infos']
-
-                        stocks=itm['qty']
-                        stock_before=stock_infos['physical_stocks']-stocks
-                        stock_after=stock_infos['physical_stocks']+stocks
-
-                        stl_infos=prod.get("storage_location_infos",{})
-                        rop_infos=prod.get("reorder_point_infos",{})
-                        pricing_infos=prod['pricing_infos']
-
-
-                        item_infos['total_items']+=1
-                        item_infos['total_cost']+=pricing_infos['sell_price']
-                        item_infos['total_gst_amount']+=(int(gst[:-1])/100)*pricing_infos['buy_price']
-                        item_infos['total_stocks']+=stocks
-                    
-                    order_item_id = generate_uuid()
-                    
-                    read_items.append({
-                        "id": order_item_id,
-                        "product_id": product_id,
-                        "ui_id": prod_ui_id,
-                        "name": product_name,
-                        "category_name": category_name,
-                        "unit_name": unit_name,
-                        "variant_infos": {"variant_id": variant_id, "variant_name": variant_name} if variant_id else None,
-                        "batch_infos": {"batch_id": batch_id, "batch_name": batch_infos.get('name', '') if isinstance(batch_infos, dict) else str(batch_infos)} if batch_id else None,
-                        "serialno_infos": {"serialno_id": "bulk", "serial_numbers": [s.get('name', s) if isinstance(s, dict) else s for s in serialno_infos]} if serialno_infos else None,
-                        "buy_price": pricing_infos.get('buy_price', 0.0),
-                        "sell_price": pricing_infos.get('sell_price', 0.0),
-                        "quantity": stocks,
-                        "returned_quantity": 0.0,
-                        "total_amount": pricing_infos.get('sell_price', 0.0) * stocks,
-                        "status": status,
-                        "gst": gst
-                    })
-
-                    order_items_toadd.append(
-                        OrderItems(
-                            order_id=order_id,
-                            id=order_item_id,
-                            product_id=product_id,
-                            variant_id=variant_id,
-                            batch_id=batch_id,
-                            serialno_infos=serialno_infos,
-                            gst=gst,
-                            buy_price=pricing_infos['buy_price'],
-                            sell_price=pricing_infos['sell_price'],
-                            quantity=stocks
-                        )
-                    )
-                
-                    
             async with AsyncOrdersLocalSession() as session:
-                repo = OrdersRepo(session=session)
+                repo = OrdersRepo(session)
+
+                ic(product_res)
+                for prod_db in product_res:
+                    ic(prod_db)
+                    product_id = prod_db['id']
+                    product_name = prod_db['name']
+                    db_ui_id = prod_db['ui_id']
+                    
+                    type_infos = prod_db.get('type_infos', {})
+                    has_variant = type_infos.get('has_variant', False)
+                    has_batch = type_infos.get('has_batch', False)
+                    has_serialno = type_infos.get('has_serialno', False)
+                    gst = prod_db.get('gst', '0%')
+
+                    category_infos=prod_db.get('category_infos') or {}
+                    unit_infos=prod_db.get('unit_infos') or {}
+
+                    incoming_item_matches = validated_payload_map.get(product_id) or []
+                    
+                    for itm in incoming_item_matches:
+                        variant_id = itm.get('variant_id')
+                        batch_id = itm.get('batch_id')
+
+                        variant_name = ''
+                        batch_infos = {}
+                        serialno_infos = []
+                        stock_infos = {}
+                        stl_infos = {}
+                        rop_infos = {}
+                        pricing_infos = {}
+
+                        # --- Dynamic Scope Resolution Resolution Tree ---
+                        if has_variant:
+                            variants_dict = prod_db.get('variants', {})
+                            variant_data = variants_dict.get(variant_id) if variants_dict else None
+                            
+                            if variant_data:
+                                variant_name = variant_data.get('name', '')
+                                
+                                if has_batch:
+                                    batches_list = variant_data.get('batch_infos', [])
+                                    for b in batches_list:
+                                        if (batch_id and b.get('id') == batch_id):
+                                            batch_infos = b
+                                            break
+                                    
+                                    stock_infos = batch_infos.get('stock_infos') or {}
+                                    serialno_infos = batch_infos.get('serialno_infos') or [] if has_serialno else []
+                                    stl_infos = batch_infos.get("storage_location_infos") or {}
+                                    rop_infos = batch_infos.get("reorder_point_infos") or {}
+                                    pricing_infos = batch_infos.get('pricing_infos') or {}
+                                else:
+                                    stock_infos = variant_data.get('stock_infos') or {}
+                                    serialno_infos = variant_data.get('serialno_infos') or [] if has_serialno else []
+                                    stl_infos = variant_data.get("storage_location_infos") or {}
+                                    rop_infos = variant_data.get("reorder_point_infos") or {}
+                                    pricing_infos = variant_data.get('pricing_infos') or {}
+                        else:
+                            if has_batch:
+                                batches_list = prod_db.get('batch_infos', [])
+                                for b in batches_list:
+                                    if (batch_id and b.get('id') == batch_id) or (batch_target_name and b.get('name') == batch_target_name):
+                                        batch_infos = b
+                                        break
+                                
+                                stock_infos = batch_infos.get('stock_infos') or {}
+                                serialno_infos = batch_infos.get('serialno_infos') or [] if has_serialno else []
+                                stl_infos = batch_infos.get("storage_location_infos") or {}
+                                rop_infos = batch_infos.get("reorder_point_infos") or {}
+                                pricing_infos = batch_infos.get('pricing_infos') or {}
+                            else:
+                                stock_infos = prod_db.get('stock_infos') or {}
+                                serialno_infos = prod_db.get('serialno_infos') or [] if has_serialno else []
+                                stl_infos = prod_db.get("storage_location_infos") or {}
+                                rop_infos = prod_db.get("reorder_point_infos") or {}
+                                pricing_infos = prod_db.get('pricing_infos') or {}
+
+                        # Compute Safe Inventory Delta Strategy metrics
+                        stocks = float(itm.get('qty',0))
+                        current_db_physical = float(stock_infos.get('physical_stocks', 0))
+                        
+                        stock_before = current_db_physical + stocks
+                        ic(stock_before, current_db_physical, stocks)
+                        stock_after = current_db_physical
+
+                        # Update transaction metadata
+                        item_infos['total_order_items'] += 1
+                        sell_price_val = float(pricing_infos.get('sell_price', 0))
+                        item_infos['total_order_amount'] += sell_price_val
+                        
+                        # if gst and gst.endswith('%') and gst_infos.get('type') == "EXCLUSIVE":
+                        #     try:
+                        #         gst_rate = float(gst[:-1]) / 100.0
+                        #         item_infos['total_gst_amount'] += gst_rate * buy_price_val
+                        #     except ValueError:
+                        #         pass
+                        
+                        item_infos['total_order_qty'] += stocks
+
+                        ord_item_id = generate_uuid()  
+                        order_items_toadd.append(
+                            OrderItems(
+                                order_id=order_id,
+                                id=ord_item_id,
+                                product_id=product_id,
+                                variant_id=variant_id,
+                                batch_id=batch_id,
+                                serialno_infos=itm['serialno_infos'],
+                                gst=gst,
+                                buy_price=pricing_infos.get('buy_price', 0.0),
+                                sell_price=pricing_infos.get('sell_price', 0.0),
+                                quantity=stocks
+                            )
+                        )
+
+                        
+
+                        read_items.append(
+                            {
+                                "id": ord_item_id,
+                                "product_id": product_id,
+                                "ui_id": db_ui_id,
+                                "name": product_name,
+                                "category_infos":category_infos,
+                                "unit_infos":unit_infos,
+                                "variant_infos": {"variant_id": variant_id, "variant_name": variant_name} if variant_id else None,
+                                "batch_infos": {
+                                    "batch_id": batch_id,
+                                    "batch_name": batch_infos.get('name', ''),
+                                    "exp_date":batch_infos.get("expiry_date"),
+                                    "mfg_date":batch_infos.get("manufacturing_date")
+                                } if batch_id else None,
+                                "serialno_infos": itm['serialno_infos'] if itm['serialno_infos'] else None,
+                                "buy_price": pricing_infos.get('buy_price', 0.0),
+                                "sell_price": pricing_infos.get('sell_price', 0.0),
+                                "quantity": stocks,
+                                "stock_before":stock_before,
+                                "stock_after":stock_after,
+                                "returned_quantity": 0.0,
+                                "total_amount": pricing_infos.get('sell_price', 0.0) * stocks,
+                                "status": status,
+                                "gst": gst
+                            }
+                        )
+
                 order_toadd=CreateOrderDbSchema(
                     id=order_id,
                     ui_id=ui_id,
@@ -310,20 +316,18 @@ class MessagingQueueOrderProducer:
                 await repo.create_bulk_items(datas=order_items_toadd)
 
 
-                total_amount_paid=0
-                total_cost=item_infos['total_cost']+item_infos['total_gst_amount']
-                for payment in payment_infos:
-                    for _, amount in payment.items():
-                        total_amount_paid += amount
+                total_amount_paid = sum(amount for method,amount in payment_infos.items())
+                total_ord_cost = float(item_infos['total_order_amount'])
+                outstanding_amount = abs(total_ord_cost - total_amount_paid)
+                ic(total_amount_paid,total_ord_cost,outstanding_amount)
 
-                ic(total_amount_paid,total_cost)
-                outstanding_amount=abs(total_cost-total_amount_paid)
-
-                outstanding_status="COMPLETED"
-                if outstanding_amount==total_cost:
-                    outstanding_status="NOT-PAID"
+                if outstanding_amount == 0:
+                    outstanding_status = "COMPLETED"
+                elif total_amount_paid == 0:
+                    outstanding_status = "NOT-PAID"
                 else:
-                    outstanding_status="PARTIALY-PAID"
+                    outstanding_status = "PARTIALY-PAID"
+
 
                 read_db_order_payload = {
                     "id": order_id,
@@ -336,10 +340,17 @@ class MessagingQueueOrderProducer:
                     "charges_infos": charges_infos or {},
                     "item_infos": item_infos or {},
                     "payment_infos": payment_infos or [],
+                    "payment_status":outstanding_status,
+                    "pending_amount":outstanding_amount,
                     "date": ord_date,
                     "items": read_items
                 }
+                ic(item_infos)
+                ic(read_items)
+                ic(read_db_order_payload)
                 await OrderReadDbRepo.replace_order(read_db_order_payload)
+
+                
 
                 if outstanding_status!="COMPLETED" and customer_id:
                     await rabbitmq_msg_obj.publish_event(
@@ -374,9 +385,10 @@ class MessagingQueueOrderProducer:
 
 
 
-        if current_step=="SUCCESS":
-            ic("Successfully Completed the purchase")
+        if current_step == "SUCCESS":
+            ic("Successfully completed the order cycle context workflow.")
             return {
                 "success": True,
                 "execution": None
             }
+    

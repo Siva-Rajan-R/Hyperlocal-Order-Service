@@ -33,7 +33,7 @@ async def create_reservation(data:CartReserveRequest):
         "batch_id": data.batch_id,
         "shop_id": data.shop_id,
         "qty": data.qty,
-        "serialno_infos":data.serialno_infos,
+        "serialno_infos":[sn.model_dump(mode="json") for sn in data.serialno_infos] if data.serialno_infos else None,
         "expires_at": expires_at.isoformat()
     }
     
@@ -66,7 +66,7 @@ async def commit_reservation(session_id:str):
     # 1. Commit reservations in inventory service
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post(f"{BASE_URL}/reservations/commit", json={"session_id": session_id,"entity_name":"OFFLINE_SALES"})
+            response = await client.post(f"{BASE_URL}/reservations/commit", json={"session_id": session_id,"entity_name":"OFFLINE_SALES",'record_stock':True})
             response.raise_for_status()
         except httpx.HTTPError as e:
             raise HTTPException(status_code=500, detail=f"Failed to commit inventory reservations: {e}")

@@ -116,7 +116,8 @@ class HandleOrderRequest:
         return r
 
     async def get(self,data:GetAllOrderSchema):
-        res=await OrdersService(session=self.session).get(data=data)
+        # res=await OrdersService(session=self.session).get(data=data)
+        res=await OrderReadDbRepo.get_all()
         ic(res)
 
         return SuccessResponseTypDict(
@@ -129,15 +130,15 @@ class HandleOrderRequest:
         )
     
     async def getby_shop_id(self,data:GetOrderByShopIdSchema):
-        res=await OrderReadDbRepo.getby_shop_id(data=data)
+        res=await OrderReadDbRepo.get_by_shop_id(shop_id=data.shop_id)
         
-        if data.offset in (0, 1):
-            data_to_send = {
-                "overall_datas": res.get("overall_datas", {}),
-                "datas": [OrderGetResponseSchema(**self._map_order_fields(r)) for r in res.get("datas", [])]
-            }
-        else:
-            data_to_send = [OrderGetResponseSchema(**self._map_order_fields(r)) for r in res.get("datas", [])]
+        # if data.offset in (0, 1):
+        #     data_to_send = {
+        #         "overall_datas": res.get("overall_datas", {}),
+        #         "datas": [OrderGetResponseSchema(**self._map_order_fields(r)) for r in res.get("datas", [])]
+        #     }
+        # else:
+        #     data_to_send = [OrderGetResponseSchema(**self._map_order_fields(r)) for r in res.get("datas", [])]
 
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
@@ -145,7 +146,7 @@ class HandleOrderRequest:
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=data_to_send
+            data=res
         )
     
     async def getby_customer_id(self,data:GetOrderByCustomerIdSchema):
@@ -169,14 +170,14 @@ class HandleOrderRequest:
         )
     
     async def getby_id(self,data:GetOrderByIdSchema):
-        res=await OrderReadDbRepo.getby_id(data=data)
+        res=await OrderReadDbRepo.get_by_id(shop_id=data.shop_id,order_id=data.id)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=OrderGetResponseSchema(**self._map_order_fields(res)) if res else None
+            data=res
         )
     
     async def search(self,limit:int,shop_id:str,query:str=""):

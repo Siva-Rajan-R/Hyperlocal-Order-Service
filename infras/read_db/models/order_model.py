@@ -3,7 +3,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 class SerialInfo(BaseModel):
-    serialno_id: str
+    id: str
     serial_numbers: List[str] = []
 
 class VariantInfo(BaseModel):
@@ -27,8 +27,7 @@ class OrderItemsReadModel(BaseModel):
     
     variant_infos: Optional[VariantInfo] = None
     batch_infos: Optional[BatchInfo] = None
-    serialno_infos: Optional[SerialInfo] = None
-    serial_numbers: Optional[List[str]] = []
+    serialno_infos: Optional[List[dict]] = None
     
     buy_price: float = 0.0
     sell_price: float = 0.0
@@ -56,7 +55,7 @@ class ReplacementOrderReadModel(BaseModel):
     calculation_infos: dict = {}
     charges_infos: dict = {}
     item_infos: dict = {}
-    payment_infos: List[dict] = []
+    payment_infos: dict = {}
     date: Optional[datetime] = None
     additional_infos: Optional[dict] = None
 
@@ -84,7 +83,7 @@ class OrderReadModel(BaseModel):
     calculation_infos: dict = {}
     charges_infos: dict = {}
     item_infos: dict = {}
-    payment_infos: List[dict] = []
+    payment_infos: dict = {}
     date: Optional[datetime] = None
     additional_infos: Optional[dict] = None
     

@@ -13,7 +13,7 @@ class CartReserveRequest(BaseModel):
     product_id: str
     variant_id: Optional[str] = None
     batch_id: Optional[str] = None
-    serialno_infos:Optional[CartSerialNoInfos]=None
+    serialno_infos:Optional[List[CartSerialNoInfos]]=None
     qty: float
 
 class CartCompleteRequest(BaseModel):
