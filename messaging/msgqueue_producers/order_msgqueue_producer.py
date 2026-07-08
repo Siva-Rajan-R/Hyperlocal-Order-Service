@@ -375,6 +375,40 @@ class MessagingQueueOrderProducer:
                         }
                     )
 
+                try:
+                    analytics_payload = {
+                        "shop_id": shop_id,
+                        "datas": [
+                            {
+                                "sales_id": order_id,
+                                "customer_id": customer_id,
+                                "product_id": item['product_id'],
+                                "variant_id": item.get('variant_infos', {}).get('variant_id') if item.get('variant_infos') else None,
+                                "batch_id": item.get('batch_infos', {}).get('batch_id') if item.get('batch_infos') else None,
+                                "stocks": float(item.get('quantity', 0)),
+                                "sales_amounts": float(item.get('total_amount', 0)),
+                                "sales_type": origin
+                            }
+                            for item in read_items
+                        ]
+                    }
+                    await rabbitmq_msg_obj.publish_event(
+                        routing_key="analytics.service.routing.key",
+                        exchange_name="analytics.service.exchange",
+                        payload=analytics_payload,
+                        headers={
+                            "entity_name": "sales_event",
+                            "service_name": "ANALYTICS",
+                            "saga_id": "none",
+                            "reply_key": "none",
+                            "reply_exchange": "none",
+                            "reply_entity_name": "none",
+                            "body": analytics_payload
+                        }
+                    )
+                except Exception as e:
+                    ic(f"Failed to publish analytics event: {e}")
+
                 return {
                     "success": True,
                     "execution": {
