@@ -49,3 +49,44 @@ async def cancel_cart(data: CartCancelRequest):
     res=await cancel_reservation(data=data)
     ic(res)
     return SuccessResponseTypDict(detail=BaseResponseTypDict(status_code=200, success=True, msg="Cart session cancelled"))
+
+@router.get('/{session_id}')
+async def get_cart_stored_order(session_id: str):
+    cart = OrderCartCacheModel(session_id)
+    items = await cart.get_cart()
+    if items is None:
+        raise HTTPException(status_code=404, detail="Cart session not found or expired")
+
+    enriched_items = []
+    async with httpx.AsyncClient() as client:
+        for item in items:
+            shop_id = item.get("shop_id")
+            product_id = item.get("product_id")
+            item_info = {}
+            if shop_id and product_id:
+                try:
+                    url = f"http://127.0.0.1:8004/inventories/by/id/{shop_id}/{product_id}"
+                    response = await client.get(url)
+                    if response.status_code == 200:
+                        res_json = response.json()
+                        item_info = res_json.get("data", {})
+                except Exception as e:
+                    ic(f"Error fetching item info from inventory service: {e}")
+            
+            enriched_items.append({
+                **item,
+                "item_info": item_info
+            })
+            
+    return SuccessResponseTypDict(
+        detail=BaseResponseTypDict(
+            status_code=200,
+            success=True,
+            msg="Cart stored order fetched successfully"
+        ),
+        data={
+            "session_id": session_id,
+            "items": enriched_items
+        }
+    )
+
