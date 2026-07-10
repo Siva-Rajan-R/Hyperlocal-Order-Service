@@ -113,7 +113,7 @@ class MessagingQueueOrderReturnProducer:
                 shop_id = order_toadd.get("shop_id")
                 
                 if order_id and shop_id:
-                    existing_order = await OrderReadDbRepo.getby_id(GetOrderByIdSchema(shop_id=shop_id, id=order_id))
+                    existing_order = await OrderReadDbRepo.get_by_id(order_id=order_id,shop_id=shop_id)
                     if existing_order:
                         if "returns" not in existing_order or existing_order["returns"] is None:
                             existing_order["returns"] = []
