@@ -186,6 +186,26 @@ class MessagingQueueOrderReturnProducer:
 
                         await OrderReadDbRepo.replace_order(existing_order)
 
+                    try:
+                        rabbitmq_msg_obj = RabbitMQMessagingConfig()
+                        await rabbitmq_msg_obj.publish_event(
+                            routing_key="activity_logs.routing.key",
+                            exchange_name="activity_logs.exchange",
+                            payload={
+                                "shop_id": shop_id,
+                                "user_name": "Hyperlocal-User",
+                                "service": "Sales-Order",
+                                "action": "RETURN",
+                                "entity_type": f"SALES-RETURN",
+                                "entity_id": order_id,
+                                "description": f"Returned order {order_id}",
+                                "changes": [{"field": "id", "before": str(order_id), "after": "RETURN"}]
+                            },
+                            headers={}
+                        )
+                    except Exception as e:
+                        ic(f"Failed to publish activity log: {e}")
+
                 return {
                     "success":True,
                     "execution":None

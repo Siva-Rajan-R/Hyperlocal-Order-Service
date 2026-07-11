@@ -181,6 +181,12 @@ class ReturnService:
                     status_code=400,
                     detail="There is no outstanding for the customer please provide the amount on upi,cash or any other payment method"
                 )
+            if oncredit_amount > customer_existing_outst:
+                ic("The customer outstanding delta is greater")
+                raise HTTPException(
+                    status_code=400,
+                    detail="The customer outstanding delta is greater"
+                )
             customer_outst_toadd={
                 "customer_id":customer_id,
                 "shop_id":shop_id,

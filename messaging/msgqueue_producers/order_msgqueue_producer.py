@@ -240,8 +240,9 @@ class MessagingQueueOrderProducer:
                         # Update transaction metadata
                         item_infos['total_order_items'] += 1
                         sell_price_val = float(pricing_infos.get('sell_price', 0))
-                        item_infos['total_order_amount'] += sell_price_val
-                        
+                        ic((sell_price_val*stocks))
+                        item_infos['total_order_amount'] += (sell_price_val*stocks)
+                        ic(item_infos)
                         # if gst and gst.endswith('%') and gst_infos.get('type') == "EXCLUSIVE":
                         #     try:
                         #         gst_rate = float(gst[:-1]) / 100.0
@@ -315,8 +316,12 @@ class MessagingQueueOrderProducer:
 
                 await repo.create_bulk_items(datas=order_items_toadd)
 
-
-                total_amount_paid = sum(amount for method,amount in payment_infos.items())
+                on_credit_amt=0
+                total_amount_paid = 0
+                for method,amount in payment_infos.items():
+                    if method=="ON_CREDIT":
+                        on_credit_amt+=amount
+                    total_amount_paid+=amount
                 total_ord_cost = float(item_infos['total_order_amount'])
                 outstanding_amount = abs(total_ord_cost - total_amount_paid)
                 ic(total_amount_paid,total_ord_cost,outstanding_amount)
@@ -352,14 +357,14 @@ class MessagingQueueOrderProducer:
 
                 
 
-                if outstanding_status!="COMPLETED" and customer_id:
+                if on_credit_amt and customer_id:
                     await rabbitmq_msg_obj.publish_event(
                         routing_key="customers.service.routing.key",
                         exchange_name="customers.service.exchange",
                         payload={
                             "shop_id": order_payload.get('shop_id'),
                             "id":order_payload.get("customer_id"),
-                            "outstanding_infos":{"amount":outstanding_amount},
+                            "outstanding_infos":{"amount":on_credit_amt},
                             "type":"INCREMENT",
                         },
                         headers={
@@ -367,7 +372,7 @@ class MessagingQueueOrderProducer:
                             "body":{
                                 "shop_id": order_payload.get('shop_id'),
                                 "id":order_payload.get("customer_id"),
-                                "outstanding_infos":{"amount":outstanding_amount},
+                                "outstanding_infos":{"amount":on_credit_amt},
                                 "type":"INCREMENT",
                             },
                             "entity_name":"add_customer_outstanding",
@@ -406,6 +411,26 @@ class MessagingQueueOrderProducer:
                             "body": analytics_payload
                         }
                     )
+
+                    try:
+                        rabbitmq_msg_obj = RabbitMQMessagingConfig()
+                        await rabbitmq_msg_obj.publish_event(
+                            routing_key="activity_logs.routing.key",
+                            exchange_name="activity_logs.exchange",
+                            payload={
+                                "shop_id": shop_id,
+                                "user_name": "Hyperlocal-User",
+                                "service": "Sales-Order",
+                                "action": "CREATED",
+                                "entity_type": f"SALES-{origin}",
+                                "entity_id": order_id,
+                                "description": f"Created order {order_id}",
+                                "changes": [{"field": "id", "before": str(order_id), "after": "CREATED"}]
+                            },
+                            headers={}
+                        )
+                    except Exception as e:
+                        ic(f"Failed to publish activity log: {e}")
                 except Exception as e:
                     ic(f"Failed to publish analytics event: {e}")
 
@@ -421,6 +446,7 @@ class MessagingQueueOrderProducer:
 
         if current_step == "SUCCESS":
             ic("Successfully completed the order cycle context workflow.")
+            
             return {
                 "success": True,
                 "execution": None
