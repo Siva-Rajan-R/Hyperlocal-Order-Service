@@ -97,11 +97,16 @@ class HandleOrderRequest:
         r['total_sellprice'] = calc_infos.get('total_sellprice', 0.0)
         
         payments = {}
-        for p in r.get('payment_infos', []):
-            mode = p.get('mode')
-            amount = p.get('amount', 0.0)
-            if mode:
-                payments[mode] = payments.get(mode, 0.0) + amount
+        payment_infos = r.get('payment_infos') or {}
+        if isinstance(payment_infos, dict):
+            payments = payment_infos
+        elif isinstance(payment_infos, list):
+            for p in payment_infos:
+                if isinstance(p, dict):
+                    mode = p.get('mode')
+                    amount = p.get('amount', 0.0)
+                    if mode:
+                        payments[mode] = payments.get(mode, 0.0) + amount
         r['payments'] = payments
         
         if 'items' in r:
@@ -152,13 +157,6 @@ class HandleOrderRequest:
     async def getby_customer_id(self,data:GetOrderByCustomerIdSchema):
         res=await OrderReadDbRepo.getby_customer_id(data=data)
         
-        if data.offset in (0, 1):
-            data_to_send = {
-                "overall_datas": res.get("overall_datas", {}),
-                "datas": [OrderGetResponseSchema(**self._map_order_fields(r)) for r in res.get("datas", [])]
-            }
-        else:
-            data_to_send = [OrderGetResponseSchema(**self._map_order_fields(r)) for r in res.get("datas", [])]
 
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
@@ -166,7 +164,7 @@ class HandleOrderRequest:
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=data_to_send
+            data=res
         )
     
     async def getby_id(self,data:GetOrderByIdSchema):
