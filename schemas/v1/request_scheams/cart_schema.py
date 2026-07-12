@@ -15,6 +15,7 @@ class CartReserveRequest(BaseModel):
     batch_id: Optional[str] = None
     serialno_infos:Optional[List[CartSerialNoInfos]]=None
     qty: float
+    unit: Optional[str] = None
 
 class CartCompleteRequest(BaseModel):
     session_id: str
