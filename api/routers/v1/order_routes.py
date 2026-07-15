@@ -1,4 +1,4 @@
-from ...handlers.ordrer_handler import HandleOrderRequest,CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,GetOrderByCustomerIdSchema
+from ...handlers.ordrer_handler import HandleOrderRequest,CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,GetOrderByCustomerIdSchema,OrderUpdateResponseSchema
 from fastapi import APIRouter,Depends,Query
 from typing import Annotated,Optional
 from infras.primary_db.main import get_pg_async_session,AsyncSession
@@ -21,7 +21,7 @@ async def create(data:CreateOrderSchema,session:PG_SESSION):
 
 
 @router.put('/status')
-async def update_status(data:CreateOrderSchema,session:PG_SESSION):
+async def update_status(data:OrderUpdateResponseSchema,session:PG_SESSION):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=CURRENT_USER_ID).update(data=data)
 
 

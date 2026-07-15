@@ -7,7 +7,7 @@ from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
 from typing import Optional,List,Dict
 from core.errors.messaging_errors import BussinessError,FatalError,RetryableError
 from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,DeleteOrderSchema,GetOrderByCustomerIdSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,DeleteOrderSchema,GetOrderByCustomerIdSchema,UpdateOrderStatusSchema
 from schemas.v1.response_schemas.user_schemas.order_schema import OrderGetResponseSchema,OrderCreateResponseSchema,OrderUpdateResponseSchema,OrderDeleteResponseSchema
 from hyperlocal_platform.core.models.req_res_models import ErrorResponseTypDict,SuccessResponseTypDict,BaseResponseTypDict
 
@@ -45,7 +45,7 @@ class HandleOrderRequest:
             data=res
         )
     
-    async def update(self,data:CreateOrderSchema):
+    async def update(self,data:UpdateOrderStatusSchema):
         res=await OrdersService(session=self.session).update(data=data)
         if not res:
             raise HTTPException(

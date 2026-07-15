@@ -114,3 +114,9 @@ class CreateExchangeSchema(BaseModel):
     payments: List[dict] = []
     replacement_items: List[OrderItemsSchema]
     exchange_items: List[ExchangeItemRequestSchema]
+
+
+class UpdateOrderStatusSchema(BaseModel):
+    id: str
+    shop_id: str
+    status: OrderStatusEnum

@@ -6,7 +6,7 @@ from infras.read_db.repos.order_repo import OrderReadDbRepo
 import asyncpg
 from fastapi.exceptions import HTTPException
 from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema,UpdateOrderDbSchema,UpdateOrderItemDbSchema
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,OrderItemsSchema,GetOrderByCustomerIdSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,OrderItemsSchema,GetOrderByCustomerIdSchema,UpdateOrderStatusSchema
 from core.errors.messaging_errors import BussinessError,FatalError,RetryableError
 from hyperlocal_platform.core.utils.routingkey_builder import RoutingkeyActions,RoutingkeyState,RoutingkeyVersions,generate_routingkey
 from hyperlocal_platform.core.utils.uuid_generator import generate_uuid
@@ -130,7 +130,7 @@ class OrdersService:
         return True
     
 
-    async def update(self,data:CreateOrderSchema):
+    async def update(self,data:UpdateOrderStatusSchema):
         old_order_data = await OrdersRepo(session=self.session).getby_id(data=GetOrderByIdSchema(id=data.id, shop_id=data.shop_id))
         
         repo_data=CreateOrderDbSchema(
@@ -143,32 +143,6 @@ class OrdersService:
             if order_data:
                 await OrderReadDbRepo.replace_order(data=dict(order_data))
 
-            if old_order_data:
-                old_dict = dict(old_order_data)
-                changes_list = ActivityLogger.compute_changes(old_dict, data.model_dump(mode='json', exclude_none=True, exclude_unset=True))
-                if changes_list:
-                    desc_changes = [f"{c['field']} prv({c['before']}) after ({c['after']})" for c in changes_list]
-                    desc = f"updated order {', '.join(desc_changes)}"
-                    try:
-                        from messaging.main import RabbitMQMessagingConfig
-                        rabbitmq_msg_obj = RabbitMQMessagingConfig()
-                        await rabbitmq_msg_obj.publish_event(
-                            routing_key="activity_logs.routing.key",
-                            exchange_name="activity_logs.exchange",
-                            payload={
-                                "shop_id": data.shop_id,
-                                "user_name": "siva",
-                                "service": "Billing",
-                                "action": "UPDATE",
-                                "entity_type": "Order",
-                                "entity_id": data.id,
-                                "description": desc,
-                                "changes": changes_list
-                            },
-                            headers={}
-                        )
-                    except Exception as e:
-                        ic(f"Failed to publish activity log: {e}")
 
         return res
     
