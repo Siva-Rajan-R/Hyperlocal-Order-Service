@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, model_validator, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 
 class SerialInfo(BaseModel):
@@ -32,10 +32,12 @@ class OrderItemsReadModel(BaseModel):
     buy_price: float = 0.0
     sell_price: float = 0.0
     quantity: float = 0.0
+    entered_qty: Optional[float] = None
+    entered_unit: Optional[str] = None
     returned_quantity: Optional[float] = None
     total_amount: float = 0.0
     
-    status: str
+    status: Optional[str] = "PENDING"
     reason: Optional[str] = None
     gst: Optional[str] = None
     
@@ -55,10 +57,11 @@ class ReplacementOrderReadModel(BaseModel):
     calculation_infos: dict = {}
     charges_infos: dict = {}
     item_infos: dict = {}
-    payment_infos: dict = {}
+    payment_infos: Union[dict, list] = {}
     date: Optional[datetime] = None
     additional_infos: Optional[dict] = None
-
+    online_details: Optional[dict] = None
+    
     datas: Optional[dict] = None
     items: List[OrderItemsReadModel] = []
     created_at: Optional[datetime] = None
@@ -83,9 +86,10 @@ class OrderReadModel(BaseModel):
     calculation_infos: dict = {}
     charges_infos: dict = {}
     item_infos: dict = {}
-    payment_infos: dict = {}
+    payment_infos: Union[dict, list] = {}
     date: Optional[datetime] = None
     additional_infos: Optional[dict] = None
+    online_details: Optional[dict] = None
     
     datas: Optional[dict] = None
     items: List[OrderItemsReadModel] = []

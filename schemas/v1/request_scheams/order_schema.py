@@ -29,6 +29,29 @@ class CreateOrderSchema(BaseModel):
     charges_infos: dict = {}
     payment_infos: dict = {}
     additional_infos: Optional[dict] = None
+    
+    # Optional fields for online order user info
+    user_id: Optional[str] = None
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    address_id: Optional[str] = None
+    full_address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    city: Optional[str] = None
+    pincode: Optional[str] = None
+    state: Optional[str] = None
+
+    from pydantic import model_validator
+    @model_validator(mode="after")
+    def validate_online_order(self):
+        origin_val = self.origin.value if hasattr(self.origin, 'value') else self.origin
+        if origin_val == "ONLINE" or origin_val == OrderOriginEnum.ONLINE:
+            mandatory_fields = ["user_id", "name", "phone", "address_id", "full_address", "city", "pincode", "state"]
+            for field in mandatory_fields:
+                if not getattr(self, field):
+                    raise ValueError(f"{field} is mandatory for ONLINE orders")
+        return self
 
 
 
@@ -91,6 +114,7 @@ class ReturnItemRequestSchema(BaseModel):
     quantity: float
     reason: Optional[str] = None
     serialno_infos: Optional[List[ReturnSerialnoInfoSchema]] = None
+    unit: Optional[str] = None
 
 class CreateReturnSchema(BaseModel):
     shop_id: str
@@ -119,4 +143,10 @@ class CreateExchangeSchema(BaseModel):
 class UpdateOrderStatusSchema(BaseModel):
     id: str
     shop_id: str
-    status: OrderStatusEnum
+    status: Optional[OrderStatusEnum] = None
+    payment_infos: Optional[dict] = None
+
+class GetBulkOrdersSchema(BaseModel):
+    shop_id: str
+    order_ids: List[str]
+

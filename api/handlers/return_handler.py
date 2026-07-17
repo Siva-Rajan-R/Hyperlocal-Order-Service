@@ -11,7 +11,7 @@ class HandleReturnRequest:
         self.shop_id = shop_id
 
     async def create(self, data: CreateReturnSchema):
-        res = await ReturnService(session=self.session).process_return(data=data)
+        res = await ReturnService(session=self.session).process_return(data=data, executing_user_id=self.cur_user_id)
         if not res:
             raise HTTPException(
                 status_code=400,

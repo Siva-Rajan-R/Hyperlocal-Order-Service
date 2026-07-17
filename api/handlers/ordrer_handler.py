@@ -7,7 +7,7 @@ from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
 from typing import Optional,List,Dict
 from core.errors.messaging_errors import BussinessError,FatalError,RetryableError
 from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,DeleteOrderSchema,GetOrderByCustomerIdSchema,UpdateOrderStatusSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,DeleteOrderSchema,GetOrderByCustomerIdSchema,UpdateOrderStatusSchema,GetBulkOrdersSchema
 from schemas.v1.response_schemas.user_schemas.order_schema import OrderGetResponseSchema,OrderCreateResponseSchema,OrderUpdateResponseSchema,OrderDeleteResponseSchema
 from hyperlocal_platform.core.models.req_res_models import ErrorResponseTypDict,SuccessResponseTypDict,BaseResponseTypDict
 
@@ -24,7 +24,7 @@ class HandleOrderRequest:
         
     async def create(self, data: CreateOrderSchema):
 
-        res = await OrdersService(session=self.session).create(data=data)
+        res = await OrdersService(session=self.session).create(data=data, executing_user_id=self.cur_user_id)
         if not res:
             raise HTTPException(
                 status_code=400,
@@ -46,7 +46,7 @@ class HandleOrderRequest:
         )
     
     async def update(self,data:UpdateOrderStatusSchema):
-        res=await OrdersService(session=self.session).update(data=data)
+        res=await OrdersService(session=self.session).update(data=data, executing_user_id=self.cur_user_id)
         if not res:
             raise HTTPException(
                     status_code=400,
@@ -215,3 +215,35 @@ class HandleOrderRequest:
             ),
             data=res
         )
+
+    async def get_bulk_orders(self, data: GetBulkOrdersSchema):
+        res = await OrdersService(session=self.session).get_bulk_orders(data=data)
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                status_code=200,
+                success=True,
+                msg="Bulk orders fetched successfully"
+            ),
+            data=res
+        )
+
+    async def getby_user_id(self, user_id: str, limit: int = 10, offset: int = 1):
+        res = await OrderReadDbRepo.get_by_user_id(user_id=user_id, limit=limit, offset=offset)
+        if not res or not res.get("datas"):
+            # Fallback to PG
+            from infras.primary_db.models.order_model import OnlineOrderModel
+            from sqlalchemy import select
+            stmt = select(OnlineOrderModel.order_id).where(OnlineOrderModel.user_id == user_id)
+            order_ids = (await self.session.execute(stmt)).scalars().all()
+            if order_ids:
+                res_bulk = await OrderReadDbRepo.get_bulk_orders_without_shop(order_ids=order_ids)
+                res = {"datas": res_bulk}
+        return SuccessResponseTypDict(
+            detail=BaseResponseTypDict(
+                status_code=200,
+                success=True,
+                msg="Order fetched successfully"
+            ),
+            data=res
+        )
+

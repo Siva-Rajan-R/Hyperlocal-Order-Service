@@ -55,6 +55,8 @@ class Orders(BASE):
         foreign_keys="Exchanges.original_order_id"
     )
 
+    online_details = relationship("OnlineOrderModel", back_populates="order", uselist=False, cascade="all, delete-orphan")
+
 class OrderItems(BASE):
     __tablename__ = "orders_items"
 
@@ -75,6 +77,8 @@ class OrderItems(BASE):
     gst = Column(String)
 
     quantity = Column(Float, nullable=False)
+    entered_qty = Column(Float, nullable=True)
+    entered_unit = Column(String, nullable=True)
     
     buy_price = Column(Float, nullable=False)
     sell_price = Column(Float, nullable=False)
@@ -146,6 +150,8 @@ class ReturnItems(BASE):
     product_id = Column(String, nullable=False)
     
     quantity = Column(Float, nullable=False)
+    entered_qty = Column(Float, nullable=True)
+    entered_unit = Column(String, nullable=True)
     refund_amount = Column(Float, nullable=False, default=0.0)
     reason = Column(String, nullable=True)
 
@@ -221,3 +227,15 @@ class ExchangeItems(BASE):
         "OrderItems",
         back_populates="exchange_items"
     )
+
+
+class OnlineOrderModel(BASE):
+    __tablename__ = "online_orders"
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
+    user_id = Column(String, nullable=False)
+    user_address_id = Column(String, nullable=False)
+    order_id = Column(String, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    order = relationship("Orders", back_populates="online_details")

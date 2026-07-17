@@ -6,7 +6,7 @@ from infras.read_db.repos.order_repo import OrderReadDbRepo
 import asyncpg
 from fastapi.exceptions import HTTPException
 from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema,UpdateOrderDbSchema,UpdateOrderItemDbSchema
-from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,OrderItemsSchema,GetOrderByCustomerIdSchema,UpdateOrderStatusSchema
+from schemas.v1.request_scheams.order_schema import CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,OrderItemsSchema,GetOrderByCustomerIdSchema,UpdateOrderStatusSchema,GetBulkOrdersSchema
 from core.errors.messaging_errors import BussinessError,FatalError,RetryableError
 from hyperlocal_platform.core.utils.routingkey_builder import RoutingkeyActions,RoutingkeyState,RoutingkeyVersions,generate_routingkey
 from hyperlocal_platform.core.utils.uuid_generator import generate_uuid
@@ -27,7 +27,7 @@ from messaging.saga_producer import SagaProducer,CreateSagaStateSchema,SagaStatu
 class OrdersService:
     def __init__(self,session:AsyncSession):
          self.session=session
-    async def create(self, data: CreateOrderSchema):
+    async def create(self, data: CreateOrderSchema, executing_user_id: Optional[str] = None):
         cart = OrderCartCacheModel(data.session_id)
         cart_data = await cart.get_cart()
         ic(cart_data)
@@ -57,7 +57,7 @@ class OrdersService:
         ic(cart_data)
         order_data={**data.model_dump(mode="json"),"items":cart_data}
 
-        saga_data={"orders":order_data}
+        saga_data={"orders":order_data, "executing_user_id": executing_user_id}
         ic(product_ids)
 
         if data.customer_id:
@@ -130,10 +130,11 @@ class OrdersService:
         return True
     
 
-    async def update(self,data:UpdateOrderStatusSchema):
+    async def update(self,data:UpdateOrderStatusSchema, executing_user_id: Optional[str] = None):
         old_order_data = await OrdersRepo(session=self.session).getby_id(data=GetOrderByIdSchema(id=data.id, shop_id=data.shop_id))
         
-        repo_data=CreateOrderDbSchema(
+        from schemas.v1.db_schemas.order_schema import UpdateOrderDbSchema
+        repo_data=UpdateOrderDbSchema(
             **data.model_dump(mode='json',exclude_unset=True,exclude_none=True)
         )
         res = await OrdersRepo(session=self.session).update(data=repo_data)
@@ -142,7 +143,6 @@ class OrdersService:
             order_data = await OrdersRepo(session=self.session).getby_id(data=GetOrderByIdSchema(id=data.id, shop_id=data.shop_id))
             if order_data:
                 await OrderReadDbRepo.replace_order(data=dict(order_data))
-
 
         return res
     
@@ -207,4 +207,11 @@ class OrdersService:
     
     async def search(self,query:str,shop_id:str,limit:int=5):
         return await OrdersRepo(session=self.session).search(shop_id=shop_id,query=query,limit=limit)
+
+    async def get_bulk_orders(self, data: GetBulkOrdersSchema):
+        res = await OrderReadDbRepo.get_bulk_orders(shop_id=data.shop_id, order_ids=data.order_ids)
+        if not res:
+            res = await OrdersRepo(session=self.session).get_bulk_orders(shop_id=data.shop_id, order_ids=data.order_ids)
+        return res
+
         

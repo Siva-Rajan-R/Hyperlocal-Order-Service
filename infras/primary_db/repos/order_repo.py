@@ -32,6 +32,8 @@ items_subq = (
                     "buy_price", OrderItems.buy_price,
                     "sell_price", OrderItems.sell_price,
                     "quantity", OrderItems.quantity,
+                    "entered_qty", OrderItems.entered_qty,
+                    "entered_unit", OrderItems.entered_unit,
                     "gst", OrderItems.gst,
                     "additional_infos",OrderItems.additional_infos,
                     "created_at", OrderItems.created_at
@@ -211,6 +213,18 @@ class OrdersRepo(BaseRepoModel):
         res=(await self.session.execute(stmt)).mappings().one_or_none()
         # self.session.commit()
         return res
+
+    @start_db_transaction
+    async def create_online_order(self, order_id: str, user_id: str, user_address_id: str):
+        from infras.primary_db.models.order_model import OnlineOrderModel
+        online_order = OnlineOrderModel(
+            order_id=order_id,
+            user_id=user_id,
+            user_address_id=user_address_id
+        )
+        self.session.add(online_order)
+        await self.session.flush()
+        return online_order
     
     @start_db_transaction
     async def create_items(self,data:OrderItemsDbSchema)->dict | None:
@@ -240,6 +254,10 @@ class OrdersRepo(BaseRepoModel):
         data_toupdate=data.model_dump(mode='json',exclude=['id','shop_id'],exclude_none=True,exclude_unset=True)
         if not data_toupdate or len(data_toupdate)<1:
             return True
+        
+        if "payment_infos" in data_toupdate:
+            if isinstance(data_toupdate["payment_infos"], dict):
+                data_toupdate["payment_infos"] = [data_toupdate["payment_infos"]]
         
         order_sts_toupdate=update(
             Orders
@@ -719,7 +737,11 @@ class OrdersRepo(BaseRepoModel):
             "origin": order.origin,
             "calculation_infos": order.calculation_infos,
             "charges_infos": order.charges_infos,
-            "payment_infos": order.payment_infos,
+            "payment_infos": (
+                {k: v for p in order.payment_infos if isinstance(p, dict) for k, v in p.items()}
+                if isinstance(order.payment_infos, list)
+                else (order.payment_infos or {})
+            ),
             "date": order.date,
             "additional_infos": order.additional_infos,
             "created_at": order.created_at,
@@ -894,3 +916,115 @@ class OrdersRepo(BaseRepoModel):
             "total_returns": res_items["total_returns"] or 0 if res_items else 0,
             "total_exchanged": res_items["total_exchanged"] or 0 if res_items else 0
         }
+
+    async def get_bulk_orders(self, shop_id: str, order_ids: List[str]) -> List[dict]:
+        stmt = (
+            select(Orders)
+            .options(
+                selectinload(Orders.items).selectinload(OrderItems.return_items),
+                selectinload(Orders.items).selectinload(OrderItems.exchange_items),
+                selectinload(Orders.returns).selectinload(Returns.items),
+                selectinload(Orders.exchanges).selectinload(Exchanges.items),
+            )
+            .where(Orders.id.in_(order_ids), Orders.shop_id == shop_id)
+        )
+
+        result = await self.session.execute(stmt)
+        orders = result.scalars().all()
+
+        response_list = []
+        for order in orders:
+            response = {
+                "id": order.id,
+                "sequence_id": order.sequence_id,
+                "ui_id": order.ui_id,
+                "shop_id": order.shop_id,
+                "customer_id": order.customer_id,
+                "status": order.status,
+                "origin": order.origin,
+                "calculation_infos": order.calculation_infos,
+                "charges_infos": order.charges_infos,
+                "payment_infos": order.payment_infos,
+                "date": order.date,
+                "additional_infos": order.additional_infos,
+                "created_at": order.created_at,
+                "updated_at": order.updated_at,
+                "items": [],
+                "returns": [],
+                "exchanges": []
+            }
+
+            for item in order.items:
+                response["items"].append({
+                    "id": item.id,
+                    "product_id": item.product_id,
+                    "variant_id": item.variant_id,
+                    "batch_id": item.batch_id,
+                    "serialno_infos": item.serialno_infos,
+                    "gst": item.gst,
+                    "quantity": item.quantity,
+                    "buy_price": item.buy_price,
+                    "sell_price": item.sell_price,
+                    "additional_infos": item.additional_infos,
+                    "returned_quantity": sum(ri.quantity for ri in item.return_items),
+                    "exchanged_quantity": sum(ei.quantity for ei in item.exchange_items),
+                    "returns": [
+                        {
+                            "id": ri.id,
+                            "quantity": ri.quantity,
+                            "created_at": ri.created_at,
+                            "updated_at": ri.updated_at
+                        }
+                        for ri in item.return_items
+                    ],
+                    "exchanges": [
+                        {
+                            "id": ei.id,
+                            "quantity": ei.quantity,
+                            "created_at": ei.created_at,
+                            "updated_at": ei.updated_at
+                        }
+                        for ei in item.exchange_items
+                    ]
+                })
+
+            for ret in order.returns:
+                response["returns"].append({
+                    "id": ret.id,
+                    "reason": ret.reason,
+                    "status": ret.status,
+                    "created_at": ret.created_at,
+                    "updated_at": ret.updated_at,
+                    "items": [
+                        {
+                            "id": ri.id,
+                            "order_item_id": ri.order_item_id,
+                            "quantity": ri.quantity,
+                            "created_at": ri.created_at,
+                            "updated_at": ri.updated_at
+                        }
+                        for ri in ret.items
+                    ]
+                })
+
+            for exch in order.exchanges:
+                response["exchanges"].append({
+                    "id": exch.id,
+                    "reason": exch.reason,
+                    "status": exch.status,
+                    "created_at": exch.created_at,
+                    "updated_at": exch.updated_at,
+                    "items": [
+                        {
+                            "id": ei.id,
+                            "order_item_id": ei.order_item_id,
+                            "quantity": ei.quantity,
+                            "created_at": ei.created_at,
+                            "updated_at": ei.updated_at
+                        }
+                        for ei in exch.items
+                    ]
+                })
+            response_list.append(response)
+
+        return response_list

@@ -16,6 +16,46 @@ class OrderReadDbRepo:
             structured_data = OrderReadModel(**data).model_dump(mode="json", exclude_none=True)
             structured_data.pop("_id", None)
             
+            # Fetch existing document to merge/preserve denormalized MongoDB-only fields
+            existing_doc = await ORDERS_COLLECTION.find_one({"id": structured_data["id"]})
+            if existing_doc:
+                # --- Top-level order fields: preserve MongoDB-only fields ---
+                for key in ["calculation_infos", "charges_infos", "item_infos", "additional_infos", "online_details", "payment_infos"]:
+                    if not structured_data.get(key) and existing_doc.get(key):
+                        structured_data[key] = existing_doc[key]
+
+                # Always preserve returns, exchanges, customer from MongoDB (PG doesn't carry them)
+                for key in ["returns", "exchanges", "customer"]:
+                    if existing_doc.get(key) is not None:
+                        structured_data[key] = existing_doc[key]
+
+                # --- Item-level: start with existing MongoDB item as base, overlay PG-authoritative fields ---
+                pg_items_map = {item["id"]: item for item in structured_data.get("items", [])}
+                existing_items = {item["id"]: item for item in existing_doc.get("items", []) if item.get("id")}
+
+                merged_items = []
+                for item_id, existing_item in existing_items.items():
+                    if item_id in pg_items_map:
+                        # Start from the full existing MongoDB item (preserves all denormalized fields)
+                        merged = dict(existing_item)
+                        pg_item = pg_items_map[item_id]
+                        # Overlay only fields that PostgreSQL authoritatively owns
+                        for pg_key in ["status", "returned_quantity", "exchanged_quantity",
+                                       "entered_qty", "entered_unit"]:
+                            if pg_item.get(pg_key) is not None:
+                                merged[pg_key] = pg_item[pg_key]
+                        merged_items.append(merged)
+                    else:
+                        # Item exists in MongoDB but not in PG result — keep it as-is
+                        merged_items.append(existing_item)
+
+                # Add any brand-new items from PG that aren't in MongoDB yet
+                for item_id, pg_item in pg_items_map.items():
+                    if item_id not in existing_items:
+                        merged_items.append(pg_item)
+
+                structured_data["items"] = merged_items
+            
             res = await ORDERS_COLLECTION.replace_one(
                 {"id": structured_data["id"]}, 
                 structured_data, 
@@ -216,3 +256,61 @@ class OrderReadDbRepo:
             order["_id"] = str(order["_id"])
             
         return orders
+
+    @classmethod
+    async def get_bulk_orders(
+        cls,
+        shop_id: str,
+        order_ids: List[str]
+    ) -> List[dict]:
+        try:
+            query = {
+                "shop_id": shop_id,
+                "id": {"$in": order_ids}
+            }
+            cursor = ORDERS_COLLECTION.find(
+                query,
+                {"_id": 0}
+            )
+            return await cursor.to_list(length=len(order_ids))
+        except Exception as e:
+            ic(f"Error in get_bulk_orders: {e}")
+            return []
+
+    @classmethod
+    async def get_by_user_id(
+        cls,
+        user_id: str,
+        limit: int = 10,
+        offset: int = 1
+    ) -> dict:
+        try:
+            skip = (offset - 1) * limit
+            query = {"online_details.user_id": user_id}
+            cursor = ORDERS_COLLECTION.find(query).sort("created_at", -1).skip(skip).limit(limit)
+            orders = await cursor.to_list(length=limit)
+            for order in orders:
+                order["_id"] = str(order["_id"])
+            return {"datas": orders}
+        except Exception as e:
+            ic(f"Error in get_by_user_id: {e}")
+            return {"datas": []}
+
+    @classmethod
+    async def get_bulk_orders_without_shop(
+        cls,
+        order_ids: List[str]
+    ) -> List[dict]:
+        try:
+            query = {
+                "id": {"$in": order_ids}
+            }
+            cursor = ORDERS_COLLECTION.find(
+                query,
+                {"_id": 0}
+            )
+            return await cursor.to_list(length=len(order_ids))
+        except Exception as e:
+            ic(f"Error in get_bulk_orders_without_shop: {e}")
+            return []
+

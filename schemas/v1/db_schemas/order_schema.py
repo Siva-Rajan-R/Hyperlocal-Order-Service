@@ -34,6 +34,7 @@ class UpdateOrderDbSchema(BaseModel):
     shop_id: str
     status: Optional[str] = None
     origin: Optional[str] = None
+    payment_infos: Optional[dict] = None
 
 class UpdateOrderItemDbSchema(BaseModel):
     id: str
