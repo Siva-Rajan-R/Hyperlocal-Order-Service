@@ -1,0 +1,16 @@
+services:
+  order-service:
+    build: 
+      context: .
+      dockerfile: .
+    
+    env_file:
+      - .env
+    
+    networks:
+      - backend-networks
+    
+    ports:
+      - "8007:8000"
+    
+    restart: unless-stopped
