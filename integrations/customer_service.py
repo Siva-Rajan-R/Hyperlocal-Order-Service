@@ -2,7 +2,8 @@ import httpx
 from icecream import ic
 
 
-BASE_URL="http://127.0.0.1:8006/customers"
+# BASE_URL="http://127.0.0.1:8006/customers"
+BASE_URL = "http://customer-service:8000"
 async def get_customer_info(shop_id:str,customer_id:str):
     try:
         async with httpx.AsyncClient() as request:
