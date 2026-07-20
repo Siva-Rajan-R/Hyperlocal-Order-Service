@@ -11,4 +11,5 @@ pydantic[email]
 pydantic-settings
 aio-pika
 motor
+httpx
 git+https://github.com/Siva-Rajan-R/hyperlocal_platform
