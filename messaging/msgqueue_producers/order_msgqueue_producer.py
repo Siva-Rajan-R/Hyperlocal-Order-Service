@@ -176,6 +176,7 @@ class MessagingQueueOrderProducer:
                         for itm in incoming_item_matches:
                             variant_id = itm.get('variant_id')
                             batch_id = itm.get('batch_id')
+                            batch_target_name = itm.get('batch_name') or itm.get('batch_target_name')
 
                             variant_name = ''
                             batch_infos = {}
@@ -196,7 +197,7 @@ class MessagingQueueOrderProducer:
                                     if has_batch:
                                         batches_list = variant_data.get('batch_infos', [])
                                         for b in batches_list:
-                                            if (batch_id and b.get('id') == batch_id):
+                                            if (batch_id and b.get('id') == batch_id) or (batch_target_name and b.get('name') == batch_target_name):
                                                 batch_infos = b
                                                 break
                                         
@@ -266,35 +267,35 @@ class MessagingQueueOrderProducer:
                                 entered_unit=itm.get('entered_unit'),
                             ))
 
-                        read_items.append(
-                            {
-                                "id": order_item_id,
-                                "product_id": product_id,
-                                "ui_id": db_ui_id,
-                                "name": product_name,
-                                "category_infos":category_infos,
-                                "unit_infos":unit_infos,
-                                "variant_infos": {"variant_id": variant_id, "variant_name": variant_name} if variant_id else None,
-                                "batch_infos": {
-                                    "batch_id": batch_id,
-                                    "batch_name": batch_infos.get('name', ''),
-                                    "exp_date":batch_infos.get("expiry_date"),
-                                    "mfg_date":batch_infos.get("manufacturing_date")
-                                } if batch_id else None,
-                                "serialno_infos": itm['serialno_infos'] if itm['serialno_infos'] else None,
-                                "buy_price": pricing_infos.get('buy_price', 0.0),
-                                "sell_price": pricing_infos.get('sell_price', 0.0),
-                                "quantity": stocks,
-                                "entered_qty": itm.get('entered_qty'),
-                                "entered_unit": itm.get('entered_unit'),
-                                "stock_before":stock_before,
-                                "stock_after":stock_after,
-                                "returned_quantity": 0.0,
-                                "total_amount": pricing_infos.get('sell_price', 0.0) * stocks,
-                                "status": status,
-                                "gst": gst
-                            }
-                        )
+                            read_items.append(
+                                {
+                                    "id": order_item_id,
+                                    "product_id": product_id,
+                                    "ui_id": db_ui_id,
+                                    "name": product_name,
+                                    "category_infos":category_infos,
+                                    "unit_infos":unit_infos,
+                                    "variant_infos": {"variant_id": variant_id, "variant_name": variant_name} if variant_id else None,
+                                    "batch_infos": {
+                                        "batch_id": batch_id,
+                                        "batch_name": batch_infos.get('name', ''),
+                                        "exp_date":batch_infos.get("expiry_date"),
+                                        "mfg_date":batch_infos.get("manufacturing_date")
+                                    } if batch_id else None,
+                                    "serialno_infos": itm['serialno_infos'] if itm['serialno_infos'] else None,
+                                    "buy_price": pricing_infos.get('buy_price', 0.0),
+                                    "sell_price": pricing_infos.get('sell_price', 0.0),
+                                    "quantity": stocks,
+                                    "entered_qty": itm.get('entered_qty'),
+                                    "entered_unit": itm.get('entered_unit'),
+                                    "stock_before":stock_before,
+                                    "stock_after":stock_after,
+                                    "returned_quantity": 0.0,
+                                    "total_amount": pricing_infos.get('sell_price', 0.0) * stocks,
+                                    "status": status,
+                                    "gst": gst
+                                }
+                            )
 
                 order_toadd=CreateOrderDbSchema(
                     id=order_id,
