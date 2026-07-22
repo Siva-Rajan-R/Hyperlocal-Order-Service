@@ -148,20 +148,23 @@ class HandleOrderRequest:
         )
     
     async def getby_customer_id(self,data:GetOrderByCustomerIdSchema):
-        res=await OrderReadDbRepo.getby_customer_id(data=data)
-        
-
+        from infras.primary_db.services.order_service import OrdersService
+        res=await OrdersService(session=self.session).getby_customer_id(data=data)
+        out_data = res.get("datas", res) if isinstance(res, dict) and "datas" in res else res
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=res
+            data=out_data
         )
     
     async def getby_id(self,data:GetOrderByIdSchema):
         res=await OrderReadDbRepo.get_by_id(shop_id=data.shop_id,order_id=data.id)
+        if not res:
+            from infras.primary_db.services.order_service import OrdersService
+            res = await OrdersService(session=self.session).getby_id(data=data)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,

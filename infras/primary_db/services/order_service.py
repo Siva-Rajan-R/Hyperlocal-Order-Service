@@ -210,23 +210,11 @@ class OrdersService:
 
     async def getby_shop_id(self,data:GetOrderByShopIdSchema):
         res = await OrdersRepo(session=self.session).getby_shop_id(data=data)
-        if data.offset in (0, 1):
-            overall_values = await OrdersRepo(session=self.session).get_overall_values(data=data)
-            return {
-                "overall_datas": overall_values,
-                "datas": res
-            }
-        return {"datas": res}
+        return res
     
     async def getby_customer_id(self,data:GetOrderByCustomerIdSchema):
         res = await OrdersRepo(session=self.session).getby_customer_id(data=data)
-        if data.offset in (0, 1):
-            overall_values = await OrdersRepo(session=self.session).get_overall_values(data=data)
-            return {
-                "overall_datas": overall_values,
-                "datas": res
-            }
-        return {"datas": res}
+        return res
     
     
 
