@@ -407,19 +407,9 @@ class MessagingQueueOrderProducer:
                 try:
                     analytics_payload = {
                         "shop_id": shop_id,
-                        "datas": [
-                            {
-                                "sales_id": order_id,
-                                "customer_id": customer_id,
-                                "product_id": item['product_id'],
-                                "variant_id": item.get('variant_infos', {}).get('variant_id') if item.get('variant_infos') else None,
-                                "batch_id": item.get('batch_infos', {}).get('batch_id') if item.get('batch_infos') else None,
-                                "stocks": float(item.get('quantity', 0)),
-                                "sales_amounts": float(item.get('total_amount', 0)),
-                                "sales_type": origin
-                            }
-                            for item in read_items
-                        ]
+                        "entity_name": "ORDER",
+                        "entity_id": str(order_id),
+                        "action": "CREATE"
                     }
                     await rabbitmq_msg_obj.publish_event(
                         routing_key="analytics.service.routing.key",
@@ -437,6 +427,7 @@ class MessagingQueueOrderProducer:
                     )
 
                     try:
+                        order_name = ui_id or f"Order #{order_id[:8]}"
                         rabbitmq_msg_obj = RabbitMQMessagingConfig()
                         await rabbitmq_msg_obj.publish_event(
                             routing_key="activity_logs.routing.key",
@@ -444,12 +435,13 @@ class MessagingQueueOrderProducer:
                             payload={
                                 "shop_id": shop_id,
                                 "user_name": "Hyperlocal-User",
-                                "service": "Sales-Order",
+                                "service": "Order",
                                 "action": "CREATED",
-                                "entity_type": f"SALES-{origin}",
-                                "entity_id": order_id,
-                                "description": f"Created order {order_id}",
-                                "changes": [{"field": "id", "before": str(order_id), "after": "CREATED"}]
+                                "entity_type": "ORDER",
+                                "entity_id": str(order_id),
+                                "entity_name": str(order_name),
+                                "description": f"Created Order {order_name} ({order_id})",
+                                "changes": []
                             },
                             headers={}
                         )

@@ -1,9 +1,12 @@
 import httpx
 from icecream import ic
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 
 # BASE_URL="http://127.0.0.1:8000"
-BASE_URL = "http://utility-service:8000/utilities"
+BASE_URL = f"{os.getenv("UTILITY_SERVICE_URL")}/utilities"
 async def get_ui_id(shop_id:str,entity_name:str="ORDER"):
     try:
         async with httpx.AsyncClient() as request:

@@ -9,10 +9,13 @@ from infras.primary_db.main import AsyncSession, get_pg_async_session
 from pydantic import BaseModel
 from schemas.v1.request_scheams.cart_schema import CartCancelRequest,CartCompleteRequest,CartRemoveRequest,CartReserveRequest,CartSerialNoInfos
 from icecream import ic
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 
 # BASE_URL="http://127.0.0.1:8004/inventories/inventories"
-BASE_URL = "http://inventory-service:8000/inventories/inventories"
+BASE_URL = f"{os.getenv("INVENTORY_SERVICE_URL")}/inventories/inventories"
 TTL_MINUTES = 3
 
 async def create_reservation(data:CartReserveRequest):

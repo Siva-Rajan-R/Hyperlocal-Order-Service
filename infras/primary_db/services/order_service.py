@@ -144,6 +144,32 @@ class OrdersService:
             if order_data:
                 await OrderReadDbRepo.replace_order(data=dict(order_data))
 
+            try:
+                from messaging.main import RabbitMQMessagingConfig
+                rabbitmq_msg_obj = RabbitMQMessagingConfig()
+                analytics_payload = {
+                    "shop_id": data.shop_id,
+                    "entity_name": "ORDER",
+                    "entity_id": str(data.id),
+                    "action": "UPDATE"
+                }
+                await rabbitmq_msg_obj.publish_event(
+                    routing_key="analytics.service.routing.key",
+                    exchange_name="analytics.service.exchange",
+                    payload=analytics_payload,
+                    headers={
+                        "entity_name": "sales_event",
+                        "service_name": "ANALYTICS",
+                        "saga_id": "none",
+                        "reply_key": "none",
+                        "reply_exchange": "none",
+                        "reply_entity_name": "none",
+                        "body": analytics_payload
+                    }
+                )
+            except Exception as e:
+                ic(f"Failed to publish analytics event on order update: {e}")
+
         return res
     
 
@@ -154,6 +180,7 @@ class OrdersService:
             await OrderReadDbRepo.delete_order(order_id=data.id, shop_id=data.shop_id)
             
             try:
+                order_name = f"Order #{data.id[:8]}"
                 from messaging.main import RabbitMQMessagingConfig
                 rabbitmq_msg_obj = RabbitMQMessagingConfig()
                 await rabbitmq_msg_obj.publish_event(
@@ -161,13 +188,14 @@ class OrdersService:
                     exchange_name="activity_logs.exchange",
                     payload={
                         "shop_id": data.shop_id,
-                        "user_name": "siva",
-                        "service": "Billing",
-                        "action": "DELETE",
-                        "entity_type": "Order",
-                        "entity_id": data.id,
-                        "description": f"Deleted billing entry",
-                        "changes": [{"field": "order_id", "before": str(data.id), "after": "DELETED"}]
+                        "user_name": "Hyperlocal-User",
+                        "service": "Order",
+                        "action": "DELETED",
+                        "entity_type": "ORDER",
+                        "entity_id": str(data.id),
+                        "entity_name": str(order_name),
+                        "description": f"Deleted Order {order_name} ({data.id})",
+                        "changes": []
                     },
                     headers={}
                 )

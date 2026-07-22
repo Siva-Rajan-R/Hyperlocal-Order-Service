@@ -61,6 +61,7 @@ class DeleteOrderSchema(BaseModel):
 
 
 class GetAllOrderSchema(BaseModel):
+    shop_id:Optional[str]=None
     query:Optional[str]=Field(default="",alias='q')
     limit:Optional[int]=Field(default=10,le=100)
     offset:int=Field(default=1)
@@ -70,6 +71,8 @@ class GetAllOrderSchema(BaseModel):
     status:Optional[str]=None
     origin:Optional[str]=None
     payment_method:Optional[str]=None
+    payment_status:Optional[str]=None
+    online_only:Optional[bool]=None
 
 
 class GetOrderByShopIdSchema(BaseModel):
@@ -83,6 +86,8 @@ class GetOrderByShopIdSchema(BaseModel):
     status:Optional[str]=None
     origin:Optional[str]=None
     payment_method:Optional[str]=None
+    payment_status:Optional[str]=None
+    online_only:Optional[bool]=None
 
 
 class GetOrderByCustomerIdSchema(BaseModel):
@@ -97,6 +102,8 @@ class GetOrderByCustomerIdSchema(BaseModel):
     status:Optional[str]=None
     origin:Optional[str]=None
     payment_method:Optional[str]=None
+    payment_status:Optional[str]=None
+    online_only:Optional[bool]=None
 
 
 class GetOrderByIdSchema(BaseModel):

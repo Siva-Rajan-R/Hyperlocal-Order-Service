@@ -121,8 +121,8 @@ class HandleOrderRequest:
         return r
 
     async def get(self,data:GetAllOrderSchema):
-        # res=await OrdersService(session=self.session).get(data=data)
-        res=await OrderReadDbRepo.get_all()
+        from infras.primary_db.services.order_service import OrdersService
+        res=await OrdersService(session=self.session).get(data=data)
         ic(res)
 
         return SuccessResponseTypDict(
@@ -135,23 +135,16 @@ class HandleOrderRequest:
         )
     
     async def getby_shop_id(self,data:GetOrderByShopIdSchema):
-        res=await OrderReadDbRepo.get_by_shop_id(shop_id=data.shop_id)
-        
-        # if data.offset in (0, 1):
-        #     data_to_send = {
-        #         "overall_datas": res.get("overall_datas", {}),
-        #         "datas": [OrderGetResponseSchema(**self._map_order_fields(r)) for r in res.get("datas", [])]
-        #     }
-        # else:
-        #     data_to_send = [OrderGetResponseSchema(**self._map_order_fields(r)) for r in res.get("datas", [])]
-
+        from infras.primary_db.services.order_service import OrdersService
+        res=await OrdersService(session=self.session).getby_shop_id(data=data)
+        out_data = res.get("datas", res) if isinstance(res, dict) and "datas" in res else res
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=res
+            data=out_data
         )
     
     async def getby_customer_id(self,data:GetOrderByCustomerIdSchema):
