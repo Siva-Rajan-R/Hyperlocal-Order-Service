@@ -1,4 +1,4 @@
-from models.repo_models.base_repo_model import BaseRepoModel
+    from models.repo_models.base_repo_model import BaseRepoModel
 from sqlalchemy.dialects.postgresql import Insert,JSONB
 from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema,OrderItemsDbSchema,UpdateOrderDbSchema,UpdateOrderItemDbSchema
 from schemas.v1.request_scheams.order_schema import DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,GetOrderByCustomerIdSchema
@@ -975,25 +975,31 @@ class OrdersRepo(BaseRepoModel):
     async def get_overall_values(self, data: GetAllOrderSchema | GetOrderByShopIdSchema | GetOrderByCustomerIdSchema) -> dict:
         conds = self._build_filter_conds(data)
 
+        total_val = func.coalesce(
+            func.cast(Orders.calculation_infos['total_sellprice'].astext, Float),
+            func.cast(Orders.item_infos['total_order_amount'].astext, Float),
+            0.0
+        )
+
         stmt_orders = select(
-            func.sum(Orders.total_sellprice).label("total_order_value"),
+            func.coalesce(func.sum(total_val), 0.0).label("total_order_value"),
             func.count(Orders.id).label("total_orders")
         ).where(*conds)
         
         res_orders = (await self.session.execute(stmt_orders)).mappings().one_or_none()
 
         stmt_items = select(
-            func.sum(case((OrderItems.status == 'REFUNDED', 1), else_=0)).label("total_returns"),
-            func.sum(case((OrderItems.status == 'EXCHANGED', 1), else_=0)).label("total_exchanged")
+            func.coalesce(func.sum(case((OrderItems.status == 'REFUNDED', 1), else_=0)), 0).label("total_returns"),
+            func.coalesce(func.sum(case((OrderItems.status == 'EXCHANGED', 1), else_=0)), 0).label("total_exchanged")
         ).select_from(Orders).outerjoin(OrderItems, Orders.id == OrderItems.order_id).where(*conds)
         
         res_items = (await self.session.execute(stmt_items)).mappings().one_or_none()
 
         return {
-            "total_order_value": res_orders["total_order_value"] or 0 if res_orders else 0,
-            "total_orders": res_orders["total_orders"] or 0 if res_orders else 0,
-            "total_returns": res_items["total_returns"] or 0 if res_items else 0,
-            "total_exchanged": res_items["total_exchanged"] or 0 if res_items else 0
+            "total_order_value": res_orders["total_order_value"] if res_orders else 0.0,
+            "total_orders": res_orders["total_orders"] if res_orders else 0,
+            "total_returns": res_items["total_returns"] if res_items else 0,
+            "total_exchanged": res_items["total_exchanged"] if res_items else 0
         }
 
     async def get_bulk_orders(self, shop_id: str, order_ids: List[str]) -> List[dict]:
@@ -1106,4 +1112,4 @@ class OrdersRepo(BaseRepoModel):
                 })
             response_list.append(response)
 
-        return response_list
+        return response_list
