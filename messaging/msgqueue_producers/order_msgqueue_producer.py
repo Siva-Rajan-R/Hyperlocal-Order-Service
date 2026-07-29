@@ -16,6 +16,7 @@ from infras.read_db.repos.shopidconfig_repo import ShopIdConfigReadDbRepo
 from infras.primary_db.models.order_model import OrderItems, Orders
 from schemas.v1.db_schemas.order_schema import CreateOrderDbSchema
 from integrations.utility_service import get_ui_id, get_shop_category, get_shop_unit
+from integrations.shop_service import get_shop_info
 from core.data_formats.enums.order_enum import OrderOriginEnum
 
 
@@ -118,8 +119,6 @@ class MessagingQueueOrderProducer:
                     ui_id = f"{ui_id_res.get('prefix')}-{ui_id_res.get('current_number')}"
                 else:
                     ui_id = f"PUR-{int(datetime.datetime.utcnow().timestamp())}"
-                ic(cart_items)
-
                 product_res = datas.get("products") or []
                 shop_id = order_payload.get("shop_id")
                 calculation_infos = order_payload.get("calculation_infos") or {}
@@ -139,9 +138,18 @@ class MessagingQueueOrderProducer:
                     'total_order_items': 0,
                     'total_order_qty': 0,
                     'total_order_cost': 0,
-                    'total_order_amount': 0
+                    'total_order_amount': 0,
+                    'total_order_gst_amount': 0.0
                 }
-                
+
+                # Fetch shop details to check if registered for GST
+                shop_infos = await get_shop_info(shop_id=shop_id)
+                shop_gst_registered = False
+                if shop_infos:
+                    shop_gst_registered = (shop_infos.get("business_infos") or {}).get("gst_infos", {}).get("registered", False)
+                ic(shop_gst_registered)
+
+                product_res = datas.get("products") or []
                 validated_payload_map: Dict[str, List[dict]] = {}
                 for prod in cart_items:
                     p_id = prod['product_id']
@@ -166,7 +174,10 @@ class MessagingQueueOrderProducer:
                         has_variant = type_infos.get('has_variant', False)
                         has_batch = type_infos.get('has_batch', False)
                         has_serialno = type_infos.get('has_serialno', False)
-                        gst = prod_db.get('gst', '0%')
+                        
+                        # Set GST to 0% if shop is not GST registered
+                        product_gst = prod_db.get('gst', '0%')
+                        gst = product_gst if shop_gst_registered else '0%'
 
                         category_infos=prod_db.get('category_infos') or {}
                         unit_infos=prod_db.get('unit_infos') or {}
@@ -244,8 +255,23 @@ class MessagingQueueOrderProducer:
                             item_infos['total_order_items'] += 1
                             item_infos['total_order_qty'] += stocks
                             sell_price_val = float(pricing_infos.get('sell_price', 0))
-                            ic((sell_price_val*stocks))
-                            item_infos['total_order_amount'] += (sell_price_val*stocks)
+                            
+                            # Parse GST percentage to raw rate
+                            gst_val = gst.replace('%', '').strip() if isinstance(gst, str) else '0'
+                            try:
+                                gst_rate = float(gst_val) / 100.0
+                            except ValueError:
+                                gst_rate = 0.0
+                            
+                            # Calculate GST amount and raw sell price
+                            # Since sell_price is inclusive of GST, raw_sell_price = sell_price / (1 + gst_rate)
+                            raw_sell_price = sell_price_val / (1.0 + gst_rate)
+                            gst_amount = sell_price_val - raw_sell_price
+                            total_item_gst = gst_amount * stocks
+                            
+                            # total_order_amount must exclude GST (raw amount)
+                            item_infos['total_order_amount'] += (raw_sell_price * stocks)
+                            item_infos['total_order_gst_amount'] += total_item_gst
                             ic(item_infos)
 
                             buy_price = float(pricing_infos.get('buy_price', 0))
@@ -261,7 +287,7 @@ class MessagingQueueOrderProducer:
                                 serialno_infos=itm.get('serialno_infos') or [],
                                 gst=gst,
                                 buy_price=pricing_infos.get('buy_price', 0.0),
-                                sell_price=pricing_infos.get('sell_price', 0.0),
+                                sell_price=raw_sell_price,
                                 quantity=stocks,
                                 entered_qty=itm.get('entered_qty'),
                                 entered_unit=itm.get('entered_unit'),
@@ -284,14 +310,14 @@ class MessagingQueueOrderProducer:
                                     } if batch_id else None,
                                     "serialno_infos": itm['serialno_infos'] if itm['serialno_infos'] else None,
                                     "buy_price": pricing_infos.get('buy_price', 0.0),
-                                    "sell_price": pricing_infos.get('sell_price', 0.0),
+                                    "sell_price": raw_sell_price,
                                     "quantity": stocks,
                                     "entered_qty": itm.get('entered_qty'),
                                     "entered_unit": itm.get('entered_unit'),
                                     "stock_before":stock_before,
                                     "stock_after":stock_after,
                                     "returned_quantity": 0.0,
-                                    "total_amount": pricing_infos.get('sell_price', 0.0) * stocks,
+                                    "total_amount": raw_sell_price * stocks,
                                     "status": status,
                                     "gst": gst
                                 }

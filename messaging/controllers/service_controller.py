@@ -138,7 +138,8 @@ async def service_main_controller(msg:AbstractIncomingMessage):
                 )
                 
 
-            await session.commit()
+            if session.in_transaction():
+                await session.commit()
 
 
             return 
@@ -147,21 +148,23 @@ async def service_main_controller(msg:AbstractIncomingMessage):
         except Exception as e:
             debug_msg=serialize_exception(e)
             ic(f"An error occurred while processing the message: {e}")
-            await saga_repo.update_status(
-                    status=SagaStatusEnum.CANCELED,
-                    saga_id=saga_id
+            if saga_id and saga_id != "none":
+                await saga_repo.update_status(
+                        status=SagaStatusEnum.CANCELED,
+                        saga_id=saga_id
+                    )
+                await saga_repo.update_error(
+                    saga_id=saga_id,
+                    error=SagaStateErrorTypDict(
+                        code="FATAL_ERROR",
+                        debug=f"Processing the message for entity '{entity_name}' failed with exceptions, {debug_msg}",
+                        user_msg="Failed to process the message due to fatal error, please check the data and try again"
+                    )
                 )
-            await saga_repo.update_error(
-                saga_id=saga_id,
-                error=SagaStateErrorTypDict(
-                    code="FATAL_ERROR",
-                    debug=f"Processing the message for entity '{entity_name}' failed with exceptions, {debug_msg}",
-                    user_msg="Failed to process the message due to fatal error, please check the data and try again"
-                )
-            )
             
 
-            await session.commit()
+            if session.in_transaction():
+                await session.commit()
 
             return False
         

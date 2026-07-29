@@ -19,11 +19,13 @@ from typing import Optional
 from hyperlocal_platform.core.basemodels.readdb_model import ReadDbBaseModel
 from ..msgqueue_producers.order_msgqueue_producer import MessagingQueueOrderProducer
 from ..msgqueue_producers.order_return_msgqueue_producer import MessagingQueueOrderReturnProducer
+from ..msgqueue_producers.order_exchange_msgqueue_producer import MessagingQueueOrderExchangeProducer
 
 
 MESSAGING_QUEUE_PRODUCER_MAPPER_BY_SERVICE_NAME={
     "ORDERS": MessagingQueueOrderProducer,
-    "ORDERS_RETURN":MessagingQueueOrderReturnProducer
+    "ORDERS_RETURN":MessagingQueueOrderReturnProducer,
+    "ORDERS_EXCHANGE":MessagingQueueOrderExchangeProducer,
 }
 
 SERVICE_NAME="ORDERS".upper()

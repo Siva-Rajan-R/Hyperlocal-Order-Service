@@ -6,21 +6,25 @@ from hyperlocal_platform.core.decorators.db_session_handler_dec import start_db_
 
 class ExchangeRepo:
     def __init__(self, session: AsyncSession):
-        self.session=session
+        self.session = session
         self.exchange_cols = (
             Exchanges.id,
             Exchanges.ui_id,
+            Exchanges.sequence_id,
             Exchanges.original_order_id,
             Exchanges.replacement_order_id,
             Exchanges.shop_id,
             Exchanges.customer_id,
-            Exchanges.additional_amount_paid,
-            Exchanges.amount_refunded,
-            Exchanges.clear_outstanding_amount,
+            Exchanges.total_exchanged_amount,
+            Exchanges.total_exchanged_qty,
+            Exchanges.total_replacement_amount,
+            Exchanges.total_replacement_qty,
+            Exchanges.payment_infos,
+            Exchanges.payment_status,
             Exchanges.reason,
             Exchanges.status,
             Exchanges.created_at,
-            Exchanges.updated_at
+            Exchanges.updated_at,
         )
 
     @start_db_transaction

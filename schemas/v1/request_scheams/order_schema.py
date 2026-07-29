@@ -129,22 +129,35 @@ class CreateReturnSchema(BaseModel):
     payment_infos:dict
     items: List[ReturnItemRequestSchema]
 
-class ExchangeItemRequestSchema(BaseModel):
-    return_order_item_id: str
-    replacement_product_id: str
-    quantity_returned: float
+class ExchangeItemSchema(BaseModel):
+    """Item the customer is returning (exchanging OUT)"""
+    order_item_id: str             # the original order item ID being exchanged
+    quantity: float                # how many they are returning
+    unit: Optional[str] = None     # optional sub-unit (e.g. 'g', 'mg')
     reason: Optional[str] = None
+    serialno_infos: Optional[List[ReturnSerialnoInfoSchema]] = None
+
+class ReplacementItemSchema(BaseModel):
+    """Item the customer is receiving (exchanging IN)"""
+    product_id: str
+    variant_id: Optional[str] = None
+    batch_id: Optional[str] = None
+    quantity: float
+    unit: Optional[str] = None     # optional sub-unit for replacement item qty
+    serialno_infos: Optional[List[ReturnSerialnoInfoSchema]] = None
+
+class ExchangePaymentSchema(BaseModel):
+    method: str                    # e.g. CASH, UPI, ON_CREDIT
+    amount: float
 
 class CreateExchangeSchema(BaseModel):
     shop_id: str
     original_order_id: str
-    customer_id: Optional[str] = None
-    customer: Optional[OrderCustomerSchema] = None
+    customer_id: Optional[str] = None   # required if using ON_CREDIT payment
     reason: Optional[str] = None
-    status: OrderStatusEnum = OrderStatusEnum.EXCHANGED
-    payments: List[dict] = []
-    replacement_items: List[OrderItemsSchema]
-    exchange_items: List[ExchangeItemRequestSchema]
+    payments: List[ExchangePaymentSchema] = []
+    exchange_items: List[ExchangeItemSchema]       # items being returned by customer
+    replacement_items: List[ReplacementItemSchema]  # items customer is taking instead
 
 
 class UpdateOrderStatusSchema(BaseModel):

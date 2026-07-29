@@ -83,9 +83,10 @@ class ReturnService:
                         detail="Invalid Order Item"
                     )
                 ic(items_map[inc_item_id])
-                original_qty=items_map[inc_item_id]['quantity']
-                returned_qty=items_map[inc_item_id]['returned_quantity']
-                exchanged_qty=items_map[inc_item_id]['exchanged_quantity']
+                original_qty = float(items_map[inc_item_id].get('quantity') or 0.0)
+                returned_qty = float(items_map[inc_item_id].get('returned_quantity') or 0.0)
+                exchanged_qty = float(items_map[inc_item_id].get('exchanged_quantity') or 0.0)
+                already_consumed = returned_qty + exchanged_qty
 
                 unit_infos = items_map[inc_item_id].get("unit_infos") or {}
                 base_unit_name = unit_infos.get("name", "")
@@ -107,15 +108,21 @@ class ReturnService:
 
                 inc_quantity = itm["quantity"] * conversion_factor
 
-                ic(original_qty,returned_qty,exchanged_qty)
+                ic(original_qty, returned_qty, exchanged_qty, already_consumed)
 
-                delta=original_qty-returned_qty-exchanged_qty-inc_quantity
+                if already_consumed >= original_qty:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"All qty for this item has already been returned or exchanged (original: {original_qty}, returned: {returned_qty}, exchanged: {exchanged_qty})"
+                    )
+
+                delta = original_qty - already_consumed - inc_quantity
                 ic(delta)
-                if delta<0:
+                if delta < 0:
                     ic("Invalid order qty")
                     raise HTTPException(
                         status_code=400,
-                        detail="The given qty should not be added"
+                        detail=f"Return qty ({inc_quantity}) exceeds available qty. Original: {original_qty}, already returned: {returned_qty}, already exchanged: {exchanged_qty}, available: {original_qty - already_consumed}"
                     )
                 
                 order_amount = items_map[inc_item_id]['sell_price']
@@ -139,12 +146,36 @@ class ReturnService:
                 founded_serialno=[]
                 existing_serial_ids = [s.get('id') for s in (items_map[inc_item_id].get('serialno_infos') or [])]
                 
+                # Extract already returned/exchanged serial numbers from MongoDB read DB order
+                already_returned_or_exchanged_sns = set()
+                if read_db_order:
+                    # Collect serial numbers from past returns
+                    for ret in (read_db_order.get("returns") or []):
+                        for r_item in (ret.get("items") or []):
+                            if r_item.get("order_item_id") == inc_item_id:
+                                for sn in (r_item.get("serialno_infos") or []):
+                                    if sn.get("id"):
+                                        already_returned_or_exchanged_sns.add(sn.get("id"))
+                    # Collect serial numbers from past exchanges
+                    for exc in (read_db_order.get("exchanges") or []):
+                        for e_item in (exc.get("items") or []):
+                            if e_item.get("order_item_id") == inc_item_id:
+                                for sn in (e_item.get("serialno_infos") or []):
+                                    if sn.get("id"):
+                                        already_returned_or_exchanged_sns.add(sn.get("id"))
+
                 for serialno in (itm.get("serialno_infos") or []):
                     if serialno['id'] not in existing_serial_ids:
                         ic("Serialno not found")
                         raise HTTPException(
                             status_code=400,
-                            detail="Serialno not found"
+                            detail=f"Serial number '{serialno['id']}' not found in the original sold item."
+                        )
+                    
+                    if serialno['id'] in already_returned_or_exchanged_sns:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Serial number '{serialno['id']}' has already been returned or exchanged."
                         )
                     
                     matched_sn = next((s for s in (items_map[inc_item_id].get('serialno_infos') or []) if s.get('id') == serialno['id']), None)

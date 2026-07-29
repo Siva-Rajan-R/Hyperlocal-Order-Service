@@ -11,7 +11,10 @@ class HandleExchangeRequest:
         self.shop_id = shop_id
 
     async def create(self, data: CreateExchangeSchema):
-        res = await ExchangeService(session=self.session).process_exchange(data=data)
+        res = await ExchangeService(session=self.session).process_exchange(
+            data=data,
+            executing_user_id=self.cur_user_id or None
+        )
         if not res:
             raise HTTPException(
                 status_code=400,
@@ -25,8 +28,8 @@ class HandleExchangeRequest:
         
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
-                status_code=201,
-                msg="Exchange Processed Successfully",
+                status_code=202,
+                msg="Exchange Request Accepted",
                 success=True
             ),
             data=True

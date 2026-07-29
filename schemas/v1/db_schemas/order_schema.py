@@ -68,17 +68,20 @@ class CreateExchangeDbSchema(BaseModel):
     replacement_order_id: str
     shop_id: str
     customer_id: Optional[str] = None
-    additional_amount_paid: float
-    amount_refunded: float
-    clear_outstanding_amount: float
+    total_exchanged_amount: float = 0.0
+    total_exchanged_qty: float = 0.0
+    total_replacement_amount: float = 0.0
+    total_replacement_qty: float = 0.0
+    payment_infos: dict = {}
+    payment_status: Optional[str] = None
     reason: Optional[str] = None
     status: str
 
 class CreateExchangeItemDbSchema(BaseModel):
     id: str
     exchange_id: str
-    return_order_item_id: str
-    replacement_product_id: str
-    quantity_returned: float
-    quantity_replaced: float = 0.0
+    order_item_id: str
+    product_id: str
+    quantity: float
+    exchange_amount: float = 0.0
     reason: Optional[str] = None
