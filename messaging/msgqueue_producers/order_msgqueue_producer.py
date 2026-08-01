@@ -407,26 +407,42 @@ class MessagingQueueOrderProducer:
 
                 
 
-                if on_credit_amt and customer_id:
+                if customer_id:
+                    non_credit_paid = sum(amt for m, amt in payment_infos.items() if m != "ON_CREDIT") if isinstance(payment_infos, dict) else 0.0
+                    pay_infos_list = []
+                    if isinstance(payment_infos, dict):
+                        for m, amt in payment_infos.items():
+                            if m != "ON_CREDIT" and amt > 0:
+                                pay_infos_list.append({
+                                    "mode": m,
+                                    "amount": float(amt),
+                                    "notes": f"Initial payment for order {ui_id}"
+                                })
+
+                    notes_str = f"Initial payment of {non_credit_paid} for order {ui_id}" if non_credit_paid > 0 else f"Order {ui_id} billed (on credit)"
+
+                    cust_outst_body = {
+                        "shop_id": order_payload.get('shop_id'),
+                        "id": customer_id,
+                        "outstanding_infos": {"amount": float(on_credit_amt)},
+                        "type": "INCREMENT",
+                        "cleared_amount": float(non_credit_paid),
+                        "total_amount": float(total_ord_cost),
+                        "entity_name": "order",
+                        "entity_id": str(order_id),
+                        "payment_infos": pay_infos_list,
+                        "notes": notes_str
+                    }
+
                     await rabbitmq_msg_obj.publish_event(
                         routing_key="customers.service.routing.key",
                         exchange_name="customers.service.exchange",
-                        payload={
-                            "shop_id": order_payload.get('shop_id'),
-                            "id":order_payload.get("customer_id"),
-                            "outstanding_infos":{"amount":on_credit_amt},
-                            "type":"INCREMENT",
-                        },
+                        payload=cust_outst_body,
                         headers={
                             **self.headers.copy(),
-                            "body":{
-                                "shop_id": order_payload.get('shop_id'),
-                                "id":order_payload.get("customer_id"),
-                                "outstanding_infos":{"amount":on_credit_amt},
-                                "type":"INCREMENT",
-                            },
-                            "entity_name":"add_customer_outstanding",
-                            "service_name":"CUSTOMERS"
+                            "body": cust_outst_body,
+                            "entity_name": "add_customer_outstanding",
+                            "service_name": "CUSTOMERS"
                         }
                     )
 
