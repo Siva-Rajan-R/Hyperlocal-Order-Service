@@ -96,7 +96,7 @@ async def create_reservation(data:CartReserveRequest):
 
 
 
-async def commit_reservation(session_id:str):
+async def commit_reservation(session_id:str, entity_id: Optional[str] = None):
     cart = OrderCartCacheModel(session_id)
     items = await cart.get_cart()
     
@@ -106,7 +106,10 @@ async def commit_reservation(session_id:str):
     # 1. Commit reservations in inventory service
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post(f"{BASE_URL}/reservations/commit", json={"session_id": session_id,"entity_name":"OFFLINE_SALES",'record_stock':True})
+            req_body = {"session_id": session_id, "entity_name": "OFFLINE_SALES", "record_stock": True}
+            if entity_id:
+                req_body["entity_id"] = entity_id
+            response = await client.post(f"{BASE_URL}/reservations/commit", json=req_body)
             response.raise_for_status()
         except httpx.HTTPError as e:
             raise HTTPException(status_code=500, detail=f"Failed to commit inventory reservations: {e}")

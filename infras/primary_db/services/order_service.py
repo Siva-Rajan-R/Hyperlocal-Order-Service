@@ -17,6 +17,7 @@ from ..main import AsyncSession
 from infras.caching.models.cart_model import OrderCartCacheModel
 from hyperlocal_platform.core.models.req_res_models import ErrorResponseTypDict,SuccessResponseTypDict,BaseResponseTypDict
 from integrations.stock_reservation import commit_reservation
+from integrations.utility_service import get_ui_id
 from hyperlocal_platform.core.enums.saga_state_enum import SagaStatusEnum,SagaStepsValueEnum
 from messaging.saga_producer import SagaProducer,CreateSagaStateSchema,SagaStatusEnum,SagaStateExecutionTypDict
 
@@ -41,7 +42,15 @@ class OrdersService:
                     success=False
                 )
             )
-        reservation_complete_res=await commit_reservation(session_id=data.session_id)
+        ui_id_val = None
+        try:
+            ui_id_res = await get_ui_id(shop_id=data.shop_id)
+            if isinstance(ui_id_res, dict) and "prefix" in ui_id_res:
+                ui_id_val = f"{ui_id_res.get('prefix')}-{ui_id_res.get('current_number')}"
+        except Exception as e:
+            ic(f"Failed to fetch UI ID for order: {e}")
+
+        reservation_complete_res=await commit_reservation(session_id=data.session_id, entity_id=ui_id_val)
         if not reservation_complete_res:
             ic("Cant able to reserve the stocks please try again")
             return False
