@@ -193,7 +193,9 @@ class ReturnService:
                         "stocks":inc_quantity,
                         "entity_name":"OFFLINE_SALES_RETURN",
                         "type":"INCREMENT",
-                        "create_stock_mov_adj":True
+                        "create_stock_mov_adj":True,
+                        "ui_id": ui_id,
+                        "order_id": order_id
                     }
                 )
 

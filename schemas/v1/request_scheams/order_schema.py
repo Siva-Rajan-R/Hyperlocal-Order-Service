@@ -59,6 +59,11 @@ class DeleteOrderSchema(BaseModel):
     id:str
     shop_id:str
 
+class VerifyDeliverySchema(BaseModel):
+    shop_id: str
+    order_id: str
+    code: str
+
 
 class GetAllOrderSchema(BaseModel):
     shop_id:Optional[str]=None

@@ -25,6 +25,11 @@ async def create(data:CreateOrderSchema,session:PG_SESSION,user_id: Optional[str
 async def update_status(data:UpdateOrderStatusSchema,session:PG_SESSION,user_id: Optional[str] = Depends(get_current_user_id)):
     return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=user_id or "").update(data=data)
 
+from schemas.v1.request_scheams.order_schema import VerifyDeliverySchema
+@router.post('/verify-delivery')
+async def verify_delivery(data:VerifyDeliverySchema,session:PG_SESSION,user_id: Optional[str] = Depends(get_current_user_id)):
+    return await HandleOrderRequest(session=session,shop_id=data.shop_id,cur_user_id=user_id or "").verify_delivery(data=data)
+
 
 @router.delete('/{shop_id}/{id}')
 async def delete(session:PG_SESSION,data:DeleteOrderSchema=Depends()):

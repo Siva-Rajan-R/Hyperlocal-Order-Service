@@ -45,6 +45,22 @@ class HandleOrderRequest:
             data=res
         )
     
+    async def verify_delivery(self, data: "VerifyDeliverySchema"):
+        from infras.read_db.repos.delivery_code_repo import DeliveryCodeRepo
+        from fastapi import HTTPException
+        from schemas.v1.request_scheams.order_schema import UpdateOrderStatusSchema
+        
+        is_valid = await DeliveryCodeRepo.verify_code(shop_id=data.shop_id, order_id=data.order_id, code=data.code)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail="Invalid or expired delivery code")
+            
+        update_data = UpdateOrderStatusSchema(
+            id=data.order_id,
+            shop_id=data.shop_id,
+            status="DELIVERED"
+        )
+        return await self.update(data=update_data)
+
     async def update(self,data:UpdateOrderStatusSchema):
         res=await OrdersService(session=self.session).update(data=data, executing_user_id=self.cur_user_id)
         if not res:
@@ -234,6 +250,17 @@ class HandleOrderRequest:
             if order_ids:
                 res_bulk = await OrderReadDbRepo.get_bulk_orders_without_shop(order_ids=order_ids)
                 res = {"datas": res_bulk}
+                
+        if res and res.get("datas"):
+            from infras.read_db.repos.delivery_code_repo import DeliveryCodeRepo
+            order_ids = [order.get("id") for order in res["datas"] if order.get("id")]
+            if order_ids:
+                codes_map = await DeliveryCodeRepo.get_codes_for_orders(order_ids=order_ids)
+                for order in res["datas"]:
+                    order_id = order.get("id")
+                    if order_id in codes_map:
+                        order["delivery_code"] = codes_map[order_id]
+                        
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,

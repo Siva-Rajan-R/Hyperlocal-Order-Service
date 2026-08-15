@@ -24,10 +24,20 @@ class OrderReadDbRepo:
                     if not structured_data.get(key) and existing_doc.get(key):
                         structured_data[key] = existing_doc[key]
 
-                # Always preserve returns, exchanges, customer from MongoDB (PG doesn't carry them)
-                for key in ["returns", "exchanges", "customer"]:
-                    if existing_doc.get(key) is not None:
-                        structured_data[key] = existing_doc[key]
+                # Always preserve returns, exchanges, customer from MongoDB (PG doesn't carry them natively)
+                for key in ["returns", "exchanges"]:
+                    old_arr = existing_doc.get(key) or []
+                    new_arr = structured_data.get(key) or []
+                    
+                    merged_dict = {x["id"]: x for x in old_arr if "id" in x}
+                    for x in new_arr:
+                        if "id" in x:
+                            merged_dict[x["id"]] = x
+                            
+                    structured_data[key] = list(merged_dict.values())
+                
+                if existing_doc.get("customer") and not structured_data.get("customer"):
+                    structured_data["customer"] = existing_doc["customer"]
 
                 # --- Item-level: start with existing MongoDB item as base, overlay PG-authoritative fields ---
                 pg_items_map = {item["id"]: item for item in structured_data.get("items", [])}
@@ -54,7 +64,13 @@ class OrderReadDbRepo:
                     if item_id not in existing_items:
                         merged_items.append(pg_item)
 
-                structured_data["items"] = merged_items
+                final_merged_items = []
+                for item in merged_items:
+                    add_info = item.get("additional_infos") or {}
+                    if not add_info.get("is_replacement"):
+                        final_merged_items.append(item)
+
+                structured_data["items"] = final_merged_items
             
             res = await ORDERS_COLLECTION.replace_one(
                 {"id": structured_data["id"]}, 

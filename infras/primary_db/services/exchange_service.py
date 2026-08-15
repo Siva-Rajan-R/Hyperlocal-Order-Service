@@ -56,9 +56,14 @@ class ExchangeService:
                             if field in rd_itm:
                                 items_map[rd_id][field] = rd_itm[field]
 
-            # ── 2. Get UI ID for this exchange ────────────────────────────────────
+            # ── 2. Get UI ID for this exchange and replacement order ──────────────
             ui_id_res = await get_ui_id(shop_id=data.shop_id)
             ui_id = f"{ui_id_res.get('prefix')}-{ui_id_res.get('current_number')}"
+
+            # Create a separate UI ID for the replacement order
+            rep_ui_id_res = await get_ui_id(shop_id=data.shop_id)
+            replacement_ui_id = f"{rep_ui_id_res.get('prefix')}-{rep_ui_id_res.get('current_number')}"
+
 
             order_id = order_data["id"]
             shop_id = data.shop_id
@@ -103,10 +108,12 @@ class ExchangeService:
 
                 qty_in_base = exc_item_dict["quantity"] * conversion_factor  # new field name
 
-                # ── Validate qty doesn't exceed what's available to exchange ──────
                 original_qty = float(orig.get("quantity") or 0.0)
-                returned_qty = float(orig.get("returned_quantity") or 0.0)
-                exchanged_qty = float(orig.get("exchanged_quantity") or 0.0)
+                
+                # Fetch already returned or exchanged from PostgreSQL items_map
+                returned_qty = float(orig.get('returned_quantity') or 0.0)
+                exchanged_qty = float(orig.get('exchanged_quantity') or 0.0)
+
                 already_consumed = returned_qty + exchanged_qty
 
                 if already_consumed >= original_qty:
@@ -396,6 +403,8 @@ class ExchangeService:
                     "customer_outst_payload": customer_outst_payload,
                     "amount_diff": amount_diff,
                     "payment_status": payment_status,
+                    "replacement_ui_id": replacement_ui_id,
+                    "original_order": order_data
                 },
                 "executing_user_id": executing_user_id,
             }

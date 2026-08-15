@@ -149,6 +149,16 @@ class OrdersService:
         res = await OrdersRepo(session=self.session).update(data=repo_data)
         if res:
             await self.session.commit()
+            
+            # --- Delivery Code Logic ---
+            from infras.read_db.repos.delivery_code_repo import DeliveryCodeRepo
+            new_status = data.status.upper() if data.status else None
+            if new_status in ("PROCESSING", "SHIPPED"):
+                await DeliveryCodeRepo.generate_and_store_code(shop_id=data.shop_id, order_id=data.id)
+            elif new_status in ("CANCELED", "CANCELLED", "DELIVERED"):
+                await DeliveryCodeRepo.delete_code(shop_id=data.shop_id, order_id=data.id)
+            # ---------------------------
+
             order_data = await OrdersRepo(session=self.session).getby_id(data=GetOrderByIdSchema(id=data.id, shop_id=data.shop_id))
             if order_data:
                 await OrderReadDbRepo.replace_order(data=dict(order_data))

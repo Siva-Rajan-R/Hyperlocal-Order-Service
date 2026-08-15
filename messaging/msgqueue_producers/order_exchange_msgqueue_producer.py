@@ -9,8 +9,9 @@ from infras.primary_db.main import AsyncOrdersLocalSession
 from infras.primary_db.repos.order_repo import OrdersRepo
 from infras.primary_db.repos.exchange_repo import ExchangeRepo
 from infras.read_db.repos.order_repo import OrderReadDbRepo
-from infras.primary_db.models.order_model import Exchanges, ExchangeItems
+from infras.primary_db.models.order_model import Exchanges, ExchangeItems, Orders, OrderItems
 from schemas.v1.request_scheams.order_schema import GetOrderByIdSchema
+import copy
 
 
 class MessagingQueueOrderExchangeProducer:
@@ -50,7 +51,36 @@ class MessagingQueueOrderExchangeProducer:
                 async with AsyncOrdersLocalSession() as session:
                     exchange_repo = ExchangeRepo(session=session)
                     order_repo = OrdersRepo(session=session)
+                    
+                    original_order = exchange_payload.get("original_order") or {}
+                    replacement_order_id = original_order.get("id")
+                    replacement_ui_id = original_order.get("ui_id")
 
+                    rep_order_items = []
+                    for rep_itm in replacement_items:
+                        rep_order_items.append(OrderItems(
+                            id=generate_uuid(),
+                            order_id=replacement_order_id,
+                            product_id=rep_itm.get("product_id"),
+                            variant_id=rep_itm.get("variant_id"),
+                            batch_id=rep_itm.get("batch_id"),
+                            serialno_infos=rep_itm.get("serialno_infos"),
+                            gst=rep_itm.get("gst"),
+                            quantity=rep_itm.get("quantity_in_base"),
+                            entered_qty=rep_itm.get("quantity"),
+                            entered_unit=rep_itm.get("unit"),
+                            buy_price=rep_itm.get("buy_price"),
+                            sell_price=rep_itm.get("sell_price"),
+                            additional_infos={"is_replacement": True, "exchange_id": exchange_toadd.get("id")}
+                        ))
+
+
+                    session.add_all(rep_order_items)
+                    
+                    # Set replacement order id to exchange before saving
+                    exchange_toadd["replacement_order_id"] = replacement_order_id
+
+                    # 2. Create Exchange
                     exchange_obj = Exchanges(**{
                         k: v for k, v in exchange_toadd.items()
                         if k in (
@@ -70,9 +100,88 @@ class MessagingQueueOrderExchangeProducer:
                         for ei in exchange_items_toadd
                     ]
 
-                    await exchange_repo.create_exchange_with_items(exchange_obj, exchange_item_objs)
+                    # Uses the existing repo function which presumably just adds to session and commits
+                    # We will just add to session manually to guarantee it's in the same transaction
+                    session.add(exchange_obj)
+                    session.add_all(exchange_item_objs)
+                    await session.commit()
+
 
                     ic("Exchange saved to primary DB successfully")
+
+                    # 3. Create Replacement Order in Read DB
+                    rep_read_items = []
+                    for rep_itm in replacement_items:
+                        rep_read_items.append({
+                            "id": generate_uuid(),
+                            "product_id": rep_itm.get("product_id"),
+                            "ui_id": rep_itm.get("ui_id", ""),  # Ensure ui_id is available
+                            "name": rep_itm.get("product_name"),
+                            "category_infos": rep_itm.get("category_infos"),
+                            "unit_infos": rep_itm.get("unit_infos"),
+                            "variant_infos": {"variant_id": rep_itm.get("variant_id"), "variant_name": rep_itm.get("variant_name")} if rep_itm.get("variant_id") else None,
+                            "batch_infos": {"batch_id": rep_itm.get("batch_id"), "batch_name": rep_itm.get("batch_name")} if rep_itm.get("batch_id") else None,
+                            "serialno_infos": rep_itm.get("serialno_infos"),
+                            "buy_price": rep_itm.get("buy_price", 0.0),
+                            "sell_price": rep_itm.get("sell_price", 0.0),
+                            "quantity": rep_itm.get("quantity_in_base"),
+                            "entered_qty": rep_itm.get("quantity"),
+                            "entered_unit": rep_itm.get("unit"),
+                            "stock_before": rep_itm.get("stocks_before"),
+                            "stock_after": rep_itm.get("stocks_before", 0) - rep_itm.get("quantity_in_base", 0),
+                            "returned_quantity": 0.0,
+                            "total_amount": rep_itm.get("sell_price", 0.0) * rep_itm.get("quantity_in_base", 1.0),
+                            "status": "COMPLETED",
+                            "gst": rep_itm.get("gst")
+                        })
+                    
+                    ic("Skipped creating Read DB replacement order, items will be appended to original order")
+                    
+                    try:
+                        rabbitmq_msg_obj = RabbitMQMessagingConfig()
+                        
+                        # 1. Analytics Event for Original Order Update
+                        analytics_payload = {
+                            "shop_id": original_order.get("shop_id"),
+                            "entity_name": "ORDER",
+                            "entity_id": str(replacement_order_id),
+                            "action": "UPDATE"
+                        }
+                        await rabbitmq_msg_obj.publish_event(
+                            routing_key="analytics.service.routing.key",
+                            exchange_name="analytics.service.exchange",
+                            payload=analytics_payload,
+                            headers={
+                                "entity_name": "sales_event",
+                                "service_name": "ANALYTICS",
+                                "saga_id": "none",
+                                "reply_key": "none",
+                                "reply_exchange": "none",
+                                "reply_entity_name": "none",
+                                "body": analytics_payload
+                            }
+                        )
+
+                        # 2. Activity Log Event
+                        order_name = replacement_ui_id or f"Order #{replacement_order_id[:8]}"
+                        await rabbitmq_msg_obj.publish_event(
+                            routing_key="activity_logs.routing.key",
+                            exchange_name="activity_logs.exchange",
+                            payload={
+                                "shop_id": original_order.get("shop_id"),
+                                "user_name": "Hyperlocal-User",
+                                "service": "Exchange",
+                                "action": "CREATED",
+                                "entity_type": "EXCHANGE",
+                                "entity_id": str(replacement_order_id),
+                                "entity_name": str(order_name),
+                                "description": f"Processed Exchange for Order {order_name} with Exchange ID {exchange_toadd.get('ui_id')}",
+                                "changes": []
+                            },
+                            headers={}
+                        )
+                    except Exception as e:
+                        ic(f"Failed to publish analytics or activity log event: {e}")
 
                     order_id = exchange_toadd.get("original_order_id")
                     shop_id = exchange_toadd.get("shop_id")
@@ -145,6 +254,7 @@ class MessagingQueueOrderExchangeProducer:
                                 "reason": exchange_toadd.get("reason"),
                                 "created_at": exchange_toadd.get("created_at"),
                                 "items": formatted_exchange_items,
+                                "replaced_items": rep_read_items,
                             })
 
                             await OrderReadDbRepo.replace_order(existing_order)
