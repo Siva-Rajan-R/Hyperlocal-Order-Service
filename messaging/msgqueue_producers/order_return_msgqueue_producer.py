@@ -210,6 +210,61 @@ class MessagingQueueOrderReturnProducer:
                         except Exception as e:
                             ic(f"Failed to publish activity log: {e}")
 
+                        # Publish customer ledger entry for the return
+                        try:
+                            customer_id = order_toadd.get("customer_id")
+                            total_refund = float(order_toadd.get("total_refund_amount", 0.0))
+                            return_ui_id = order_toadd.get("ui_id") or order_toadd.get("id")
+                            order_ui_id = existing_order.get("ui_id") or existing_order.get("invoice_no") or order_id
+
+                            if customer_id and total_refund > 0:
+                                # Extract payment method from return payment_infos
+                                pay_method = "CASH"
+                                p_infos = order_toadd.get("payment_infos", {})
+                                if isinstance(p_infos, dict):
+                                    for key, val in p_infos.items():
+                                        if key != "ON_CREDIT":
+                                            pay_method = key
+                                            break
+                                        else:
+                                            pay_method = "ON_CREDIT"
+                                elif isinstance(p_infos, list) and len(p_infos) > 0:
+                                    p0 = p_infos[0]
+                                    pay_method = p0.get("mode") or p0.get("method") or p0.get("type") or "CASH"
+
+                                decrement_amount = total_refund if pay_method == "ON_CREDIT" else 0.0
+
+                                customer_ledger_payload = {
+                                    "id": customer_id,
+                                    "shop_id": shop_id,
+                                    "outstanding_infos": {"amount": decrement_amount},
+                                    "type": "DECREMENT",
+                                    "entity_name": "sales_return",
+                                    "entity_id": str(return_ui_id or order_id),
+                                    "invoice_no": str(order_ui_id or ""),
+                                    "payment_method": pay_method,
+                                    "cleared_amount": total_refund,
+                                    "notes": f"Sales return for order {order_ui_id}. Refund amount: {total_refund}",
+                                    "payment_infos": [{"method": pay_method, "amount": total_refund}]
+                                }
+                                await rabbitmq_msg_obj.publish_event(
+                                    routing_key="customers.service.routing.key",
+                                    exchange_name="customers.service.exchange",
+                                    payload=customer_ledger_payload,
+                                    headers={
+                                        "saga_id": "none",
+                                        "reply_key": "none",
+                                        "reply_exchange": "none",
+                                        "reply_entity_name": "none",
+                                        "service_name": "CUSTOMERS",
+                                        "entity_name": "add_customer_outstanding",
+                                        "body": customer_ledger_payload
+                                    }
+                                )
+                                ic(f"Published customer ledger entry for sales return: {return_ui_id}")
+                        except Exception as e:
+                            ic(f"Failed to publish customer ledger entry for return: {e}")
+
                 # Emit Success Notification
                 try:
                     from helpers.emit_notification import emit_notification

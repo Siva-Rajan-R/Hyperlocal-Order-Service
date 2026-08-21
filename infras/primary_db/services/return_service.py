@@ -241,8 +241,9 @@ class ReturnService:
                     )
                 customer_infos=await get_customer_info(shop_id=data.shop_id,customer_id=customer_id)
                 ic(customer_infos)
-                customer_existing_outst=customer_infos['outstanding_infos']['amount'] if customer_infos else None
-                if not customer_existing_outst:
+                outst_infos = (customer_infos or {}).get('outstanding_infos') or {}
+                customer_existing_outst = float(outst_infos.get('amount', 0.0))
+                if customer_existing_outst <= 0:
                     ic("There is no outstanding for the customer please provide the amount on upi,cash or any other payment method")
                     raise HTTPException(
                         status_code=400,

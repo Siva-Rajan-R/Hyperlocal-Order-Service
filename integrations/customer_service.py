@@ -10,7 +10,7 @@ BASE_URL = os.getenv("CUSTOMER_SERVICE_URL")
 async def get_customer_info(shop_id:str,customer_id:str):
     try:
         async with httpx.AsyncClient() as request:
-            url=f"{BASE_URL}/by/id/{shop_id}/{customer_id}"
+            url=f"{BASE_URL}/customers/by/id/{shop_id}/{customer_id}"
             ic(url)
             response=await request.get(url=url)
             ic("product ui id => ",response.json())

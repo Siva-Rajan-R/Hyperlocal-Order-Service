@@ -425,6 +425,7 @@ class OrdersRepo(BaseRepoModel):
                 selectinload(Orders.exchanges).selectinload(Exchanges.items),
             )
             .where(*self._build_filter_conds(data))
+            .order_by(Orders.created_at.desc())
             .offset(cursor)
             .limit(data.limit)
         )

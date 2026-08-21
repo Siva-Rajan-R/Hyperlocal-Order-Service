@@ -56,7 +56,7 @@ class ReadDbBaseRepo:
                 offset = 1
 
             skip = (offset - 1) * limit
-            cursor = cursor.skip(skip).limit(limit)
+            cursor = cursor.sort("created_at", -1).skip(skip).limit(limit)
 
         elif limit is not None:
             cursor = cursor.limit(limit)
