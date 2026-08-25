@@ -131,8 +131,15 @@ class ExchangeService:
                                f"Original: {original_qty}, already returned: {returned_qty}, already exchanged: {exchanged_qty}"
                     )
 
-                sell_price = orig.get("sell_price", 0.0)
-                item_exchange_amount = qty_in_base * sell_price
+                raw_sell_price = float(orig.get("sell_price", 0.0) or 0.0)
+                item_gst = orig.get("gst") or "0%"
+                gst_val = item_gst.replace('%', '').strip() if isinstance(item_gst, str) else '0'
+                try:
+                    gst_rate = float(gst_val) / 100.0
+                except ValueError:
+                    gst_rate = 0.0
+                full_sell_price_with_gst = raw_sell_price * (1.0 + gst_rate)
+                item_exchange_amount = qty_in_base * full_sell_price_with_gst
                 total_exchanged_qty += qty_in_base
                 total_exchanged_amount += item_exchange_amount
 

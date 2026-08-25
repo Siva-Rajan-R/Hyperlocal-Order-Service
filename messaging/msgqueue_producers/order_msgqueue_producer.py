@@ -469,7 +469,8 @@ class MessagingQueueOrderProducer:
                     )
 
                     try:
-                        order_name = ui_id or f"Order #{order_id[:8]}"
+                        effective_ui_id = ui_id or f"Order #{order_id[:8]}"
+                        order_name = effective_ui_id
                         rabbitmq_msg_obj = RabbitMQMessagingConfig()
                         await rabbitmq_msg_obj.publish_event(
                             routing_key="activity_logs.routing.key",
@@ -480,9 +481,9 @@ class MessagingQueueOrderProducer:
                                 "service": "Order",
                                 "action": "CREATED",
                                 "entity_type": "ORDER",
-                                "entity_id": str(order_id),
+                                "entity_id": str(effective_ui_id),
                                 "entity_name": str(order_name),
-                                "description": f"Created Order {order_name} ({order_id})",
+                                "description": f"Created Order {order_name} ({effective_ui_id})",
                                 "changes": []
                             },
                             headers={}

@@ -125,24 +125,60 @@ class ReturnService:
                         detail=f"Return qty ({inc_quantity}) exceeds available qty. Original: {original_qty}, already returned: {returned_qty}, already exchanged: {exchanged_qty}, available: {original_qty - already_consumed}"
                     )
                 
-                order_amount = items_map[inc_item_id]['sell_price']
-                total_return_qty_amount=inc_quantity*order_amount
-                total_returned_paid_amount=0
+                raw_sell_price = float(items_map[inc_item_id]['sell_price'] or 0.0)
+                item_gst = items_map[inc_item_id].get('gst') or "0%"
+                gst_val = item_gst.replace('%', '').strip() if isinstance(item_gst, str) else '0'
+                try:
+                    gst_rate = float(gst_val) / 100.0
+                except ValueError:
+                    gst_rate = 0.0
                 
-                for key, val in data.payment_infos.items():
-                    amount = val.get("amount", 0) if isinstance(val, dict) else val
-                    total_returned_paid_amount += amount
+                # OrderItems.sell_price is stored as net/raw amount (excl GST).
+                # Customer paid inclusive of GST = raw_sell_price * (1 + gst_rate).
+                full_sell_price_with_gst = raw_sell_price * (1.0 + gst_rate)
+                total_return_qty_amount = inc_quantity * full_sell_price_with_gst
+                total_refund_amount += total_return_qty_amount
+                total_refund_qty += inc_quantity
 
-                    if key == "ON_CREDIT":
-                        oncredit_amount += amount
-                ic(total_return_qty_amount,total_refund_amount)
-                
-                if (total_return_qty_amount-total_returned_paid_amount)!=0:
-                    ic("Return Amount should be proeprly emnter")
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Return Amount need to enter proeprly"
-                    )
+            total_returned_paid_amount = 0
+            for key, val in data.payment_infos.items():
+                amount = val.get("amount", 0) if isinstance(val, dict) else val
+                total_returned_paid_amount += amount
+                if key == "ON_CREDIT":
+                    oncredit_amount += amount
+
+            if abs(total_refund_amount - total_returned_paid_amount) > 0.01:
+                ic("Return Amount should be properly entered", total_refund_amount, total_returned_paid_amount)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Entered refund amount ({total_returned_paid_amount}) does not match required return total ({total_refund_amount})."
+                )
+
+            for itm in data.items:
+                itm = itm.model_dump()
+                inc_item_id = itm['order_item_id']
+                unit_infos = items_map[inc_item_id].get("unit_infos") or {}
+                base_unit_name = unit_infos.get("name", "")
+                sub_units = unit_infos.get("sub_units", []) or []
+                conversion_factor = 1.0
+                entered_unit = itm.get("unit")
+                if entered_unit:
+                    if entered_unit.lower() == base_unit_name.lower():
+                        conversion_factor = 1.0
+                    else:
+                        matched_sub = next((su for su in sub_units if su and su.get("name", "").lower() == entered_unit.lower()), None)
+                        if matched_sub:
+                            conversion_factor = float(matched_sub.get("factor", 1.0))
+                inc_quantity = itm["quantity"] * conversion_factor
+                raw_sell_price = float(items_map[inc_item_id]['sell_price'] or 0.0)
+                item_gst = items_map[inc_item_id].get('gst') or "0%"
+                gst_val = item_gst.replace('%', '').strip() if isinstance(item_gst, str) else '0'
+                try:
+                    gst_rate = float(gst_val) / 100.0
+                except ValueError:
+                    gst_rate = 0.0
+                full_sell_price_with_gst = raw_sell_price * (1.0 + gst_rate)
+                total_return_qty_amount = inc_quantity * full_sell_price_with_gst
                 founded_serialno=[]
                 existing_serial_ids = [s.get('id') for s in (items_map[inc_item_id].get('serialno_infos') or [])]
                 
@@ -199,8 +235,6 @@ class ReturnService:
                     }
                 )
 
-                total_refund_qty+=inc_quantity
-                total_refund_amount+=total_return_qty_amount
                 ic(total_refund_amount,total_refund_qty,total_return_qty_amount,total_returned_paid_amount)
                 return_items_toadd.append(
                     {

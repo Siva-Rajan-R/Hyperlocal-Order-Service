@@ -199,7 +199,9 @@ class OrdersService:
             await OrderReadDbRepo.delete_order(order_id=data.id, shop_id=data.shop_id)
             
             try:
-                order_name = f"Order #{data.id[:8]}"
+                order_doc = await OrderReadDbRepo.get_by_id(data.id, data.shop_id) if hasattr(OrderReadDbRepo, "get_by_id") else None
+                effective_ui_id = (order_doc.get("ui_id") if isinstance(order_doc, dict) else None) or getattr(data, "ui_id", None) or f"Order #{data.id[:8]}"
+                order_name = effective_ui_id
                 from messaging.main import RabbitMQMessagingConfig
                 rabbitmq_msg_obj = RabbitMQMessagingConfig()
                 await rabbitmq_msg_obj.publish_event(
@@ -211,9 +213,9 @@ class OrdersService:
                         "service": "Order",
                         "action": "DELETED",
                         "entity_type": "ORDER",
-                        "entity_id": str(data.id),
+                        "entity_id": str(effective_ui_id),
                         "entity_name": str(order_name),
-                        "description": f"Deleted Order {order_name} ({data.id})",
+                        "description": f"Deleted Order ({effective_ui_id})",
                         "changes": []
                     },
                     headers={}
