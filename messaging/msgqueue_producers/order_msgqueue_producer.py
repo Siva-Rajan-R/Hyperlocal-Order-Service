@@ -429,7 +429,8 @@ class MessagingQueueOrderProducer:
                         "cleared_amount": float(non_credit_paid),
                         "total_amount": float(total_ord_cost),
                         "entity_name": "order",
-                        "entity_id": str(order_id),
+                        "entity_id": str(ui_id or order_id),
+                        "invoice_no": str(ui_id or order_id),
                         "payment_infos": pay_infos_list,
                         "notes": notes_str
                     }
