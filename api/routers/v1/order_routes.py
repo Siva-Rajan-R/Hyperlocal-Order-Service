@@ -71,4 +71,73 @@ async def get_bulk_orders(data: GetBulkOrdersSchema, session: PG_SESSION):
 
 @router.get('/by/user/{user_id}')
 async def get_by_user_id(user_id: str, session: PG_SESSION, limit: int = Query(10), offset: int = Query(1)):
-    return await HandleOrderRequest(session=session, shop_id="", cur_user_id="").getby_user_id(user_id=user_id, limit=limit, offset=offset)
+    return await HandleOrderRequest(session=session, shop_id="", cur_user_id="").getby_user_id(user_id=user_id, limit=limit, offset=offset)
+
+
+# --- Export Routes ---
+from schemas.v1.export_schemas import ExportDataRequestSchema
+from arq import create_pool
+from arq.connections import RedisSettings
+import json, os, uuid
+from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict, BaseResponseTypDict
+from fastapi import HTTPException
+import redis.asyncio as aioredis
+
+REDIS_URL = os.getenv("PLATFORM_REDIS_URL") or "redis://localhost:6379"
+
+@router.post('/export')
+async def export_orders(data: ExportDataRequestSchema):
+    job_id = str(uuid.uuid4())
+    payload = data.model_dump()
+    payload["job_id"] = job_id
+    
+    redis = await create_pool(RedisSettings.from_dsn(REDIS_URL))
+    await redis.enqueue_job("export_orders_task", payload, _job_id=job_id, _queue_name="order_export_queue")
+    await redis.close()
+
+    
+    # Store initial state in Redis
+    redis_client = aioredis.Redis.from_url(REDIS_URL, decode_responses=True)
+    await redis_client.set(
+        f"EXPORT_JOB:{job_id}",
+        json.dumps({
+            "job_id": job_id,
+            "entity": "ORDER",
+            "status": "QUEUED",
+            "params": payload
+        }),
+        ex=86400
+    )
+    await redis_client.aclose()
+    
+    return SuccessResponseTypDict(
+        detail=BaseResponseTypDict(
+            msg="Order export job scheduled successfully in the background",
+            status_code=202,
+            success=True
+        ),
+        data={
+            "job_id": job_id,
+            "entity": "ORDER",
+            "status": "QUEUED"
+        }
+    )
+
+@router.get('/export/status/{job_id}')
+async def get_order_export_status(job_id: str):
+    redis_client = aioredis.Redis.from_url(REDIS_URL, decode_responses=True)
+    raw = await redis_client.get(f"EXPORT_JOB:{job_id}")
+    await redis_client.aclose()
+    
+    if not raw:
+        raise HTTPException(status_code=404, detail="Export job not found")
+        
+    return SuccessResponseTypDict(
+        detail=BaseResponseTypDict(
+            msg="Export status fetched successfully",
+            status_code=200,
+            success=True
+        ),
+        data=json.loads(raw)
+    )
+
