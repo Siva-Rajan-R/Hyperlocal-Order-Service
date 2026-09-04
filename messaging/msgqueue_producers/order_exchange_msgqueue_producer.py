@@ -1,3 +1,4 @@
+from core.utils.user_context import get_activity_log_user_info
 import datetime
 from typing import Any, Dict, List
 from icecream import ic
@@ -169,7 +170,7 @@ class MessagingQueueOrderExchangeProducer:
                             exchange_name="activity_logs.exchange",
                             payload={
                                 "shop_id": original_order.get("shop_id"),
-                                "user_name": "Hyperlocal-User",
+                                **get_activity_log_user_info(),
                                 "service": "Exchange",
                                 "action": "CREATED",
                                 "entity_type": "EXCHANGE",
@@ -295,7 +296,7 @@ class MessagingQueueOrderExchangeProducer:
                             exchange_name="activity_logs.exchange",
                             payload={
                                 "shop_id": shop_id,
-                                "user_name": "Hyperlocal-User",
+                                **get_activity_log_user_info(),
                                 "service": "Sales-Order",
                                 "action": "EXCHANGE",
                                 "entity_type": "SALES-EXCHANGE",

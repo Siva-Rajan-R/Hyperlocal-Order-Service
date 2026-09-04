@@ -1,3 +1,4 @@
+from core.utils.user_context import get_activity_log_user_info
 from ..repos.order_repo import OrdersRepo,OrderItems
 from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum,OrderReturnTypeEnum
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -209,7 +210,7 @@ class OrdersService:
                     exchange_name="activity_logs.exchange",
                     payload={
                         "shop_id": data.shop_id,
-                        "user_name": "Hyperlocal-User",
+                        **get_activity_log_user_info(),
                         "service": "Order",
                         "action": "DELETED",
                         "entity_type": "ORDER",

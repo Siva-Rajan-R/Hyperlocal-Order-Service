@@ -1,3 +1,4 @@
+from core.utils.user_context import get_activity_log_user_info
 order_id = generate_uuid()
 
         order_items_toadd = []
@@ -80,7 +81,7 @@ order_id = generate_uuid()
                     exchange_name="activity_logs.exchange",
                     payload={
                         "shop_id": data.shop_id,
-                        "user_name": "siva",
+                        **get_activity_log_user_info(),
                         "service": "Billing",
                         "action": "CREATE",
                         "entity_type": "Order",

@@ -1,3 +1,4 @@
+from core.utils.user_context import get_activity_log_user_info
 import datetime
 from typing import Any, Dict, List
 from icecream import ic
@@ -478,7 +479,7 @@ class MessagingQueueOrderProducer:
                             exchange_name="activity_logs.exchange",
                             payload={
                                 "shop_id": shop_id,
-                                "user_name": "Hyperlocal-User",
+                                **get_activity_log_user_info(),
                                 "service": "Order",
                                 "action": "CREATED",
                                 "entity_type": "ORDER",
