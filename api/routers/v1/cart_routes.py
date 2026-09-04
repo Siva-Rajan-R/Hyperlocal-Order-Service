@@ -13,7 +13,7 @@ router = APIRouter(
     prefix="/cart"
 )
 
-INVENTORY_SERVICE_URL = "http://127.0.0.1:8000/inventories/inventories"
+INVENTORY_SERVICE_URL = "http://127.0.0.1:8004/inventories"
 TTL_MINUTES = 15
 
 @router.post('/init')

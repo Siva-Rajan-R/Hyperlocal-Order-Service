@@ -21,7 +21,7 @@ from messaging.main import RabbitMQMessagingConfig
 from ..main import AsyncSession
 
 
-INVENTORY_URL = f"{os.getenv('INVENTORY_SERVICE_URL', 'http://127.0.0.1:8000')}/inventories/inventories"
+INVENTORY_URL = f"{os.getenv('INVENTORY_SERVICE_URL', 'http://127.0.0.1:8004')}/inventories"
 CUSTOMER_SERVICE_URL = f"{os.getenv('CUSTOMER_SERVICE_URL', 'http://127.0.0.1:8007')}/customers"
 
 

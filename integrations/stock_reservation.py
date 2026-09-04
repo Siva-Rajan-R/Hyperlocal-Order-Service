@@ -14,8 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-# BASE_URL="http://127.0.0.1:8004/inventories/inventories"
-BASE_URL = f"{os.getenv("INVENTORY_SERVICE_URL")}/inventories/inventories"
+BASE_URL = f"{os.getenv('INVENTORY_SERVICE_URL', 'http://127.0.0.1:8004')}/inventories"
 TTL_MINUTES = 3
 
 async def create_reservation(data:CartReserveRequest):
