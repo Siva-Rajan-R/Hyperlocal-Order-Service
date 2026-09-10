@@ -21,6 +21,72 @@ from messaging.main import RabbitMQMessagingConfig
 from typing import Optional,List
 
 
+def parse_gst_rate(gst_val) -> float:
+    if gst_val is None:
+        return 0.0
+    if isinstance(gst_val, (int, float)):
+        val = float(gst_val)
+        return val / 100.0 if val > 1.0 else val
+    if isinstance(gst_val, str):
+        cleaned = gst_val.replace('%', '').strip()
+        try:
+            val = float(cleaned)
+            return val / 100.0 if val > 1.0 else val
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def resolve_item_gst_rate(
+    item_dict: dict,
+    calculation_infos: Optional[dict] = None,
+    read_db_order: Optional[dict] = None
+) -> float:
+    # 1. Try directly from item_dict['gst']
+    item_gst = item_dict.get('gst')
+    gst_rate = parse_gst_rate(item_gst)
+    if gst_rate > 0:
+        return gst_rate
+
+    # 2. Try from read_db_order items
+    if read_db_order:
+        item_id = item_dict.get('id')
+        for rd_itm in (read_db_order.get('items') or []):
+            if rd_itm.get('id') == item_id:
+                rd_gst = parse_gst_rate(rd_itm.get('gst'))
+                if rd_gst > 0:
+                    return rd_gst
+                break
+
+    # 3. Try from calculation_infos['items']
+    calc = calculation_infos or (read_db_order.get('calculation_infos') if read_db_order else {}) or {}
+    product_id = item_dict.get('product_id')
+    variant_id = item_dict.get('variant_id')
+
+    include_gst = calc.get('include_gst')
+    gst_amount = float(calc.get('gst_amount') or 0.0)
+
+    for ci in (calc.get('items') or []):
+        if not isinstance(ci, dict):
+            continue
+        if ci.get('product_id') == product_id:
+            if variant_id and ci.get('variant_id'):
+                if ci.get('variant_id') != variant_id:
+                    continue
+            ci_gst = parse_gst_rate(ci.get('gst'))
+            if ci_gst > 0:
+                if include_gst is False and gst_amount <= 0:
+                    return 0.0
+                return ci_gst
+
+    # 4. Try from overall order calculation_infos (gst_amount / subtotal)
+    subtotal = float(calc.get('subtotal') or 0.0)
+    if gst_amount > 0 and subtotal > 0:
+        return gst_amount / subtotal
+
+    return 0.0
+
+
 class ReturnService:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -61,9 +127,10 @@ class ReturnService:
                     rd_id = rd_itm.get("id")
                     if rd_id and rd_id in items_map:
                         # Merge denormalized product fields from MongoDB into items_map
-                        for field in ("unit_infos", "category_infos", "name", "ui_id", "variant_infos"):
-                            if field in rd_itm:
-                                items_map[rd_id][field] = rd_itm[field]
+                        for field in ("unit_infos", "category_infos", "name", "ui_id", "variant_infos", "gst"):
+                            if field in rd_itm and rd_itm[field] is not None:
+                                if field != "gst" or (not items_map[rd_id].get("gst") or items_map[rd_id].get("gst") == "0%"):
+                                    items_map[rd_id][field] = rd_itm[field]
             return_toadd=None
             return_items_toadd=[]
             products_toupdate=[]
@@ -126,18 +193,17 @@ class ReturnService:
                     )
                 
                 raw_sell_price = float(items_map[inc_item_id]['sell_price'] or 0.0)
-                item_gst = items_map[inc_item_id].get('gst') or "0%"
-                gst_val = item_gst.replace('%', '').strip() if isinstance(item_gst, str) else '0'
-                try:
-                    gst_rate = float(gst_val) / 100.0
-                except ValueError:
-                    gst_rate = 0.0
+                gst_rate = resolve_item_gst_rate(
+                    item_dict=items_map[inc_item_id],
+                    calculation_infos=calculation_infos,
+                    read_db_order=read_db_order
+                )
                 
                 # OrderItems.sell_price is stored as net/raw amount (excl GST).
                 # Customer paid inclusive of GST = raw_sell_price * (1 + gst_rate).
-                full_sell_price_with_gst = raw_sell_price * (1.0 + gst_rate)
-                total_return_qty_amount = inc_quantity * full_sell_price_with_gst
-                total_refund_amount += total_return_qty_amount
+                full_sell_price_with_gst = round(raw_sell_price * (1.0 + gst_rate), 2)
+                total_return_qty_amount = round(inc_quantity * full_sell_price_with_gst, 2)
+                total_refund_amount = round(total_refund_amount + total_return_qty_amount, 2)
                 total_refund_qty += inc_quantity
 
             total_returned_paid_amount = 0
@@ -146,6 +212,9 @@ class ReturnService:
                 total_returned_paid_amount += amount
                 if key == "ON_CREDIT":
                     oncredit_amount += amount
+
+            total_returned_paid_amount = round(total_returned_paid_amount, 2)
+            total_refund_amount = round(total_refund_amount, 2)
 
             if abs(total_refund_amount - total_returned_paid_amount) > 0.01:
                 ic("Return Amount should be properly entered", total_refund_amount, total_returned_paid_amount)
@@ -171,14 +240,13 @@ class ReturnService:
                             conversion_factor = float(matched_sub.get("factor", 1.0))
                 inc_quantity = itm["quantity"] * conversion_factor
                 raw_sell_price = float(items_map[inc_item_id]['sell_price'] or 0.0)
-                item_gst = items_map[inc_item_id].get('gst') or "0%"
-                gst_val = item_gst.replace('%', '').strip() if isinstance(item_gst, str) else '0'
-                try:
-                    gst_rate = float(gst_val) / 100.0
-                except ValueError:
-                    gst_rate = 0.0
-                full_sell_price_with_gst = raw_sell_price * (1.0 + gst_rate)
-                total_return_qty_amount = inc_quantity * full_sell_price_with_gst
+                gst_rate = resolve_item_gst_rate(
+                    item_dict=items_map[inc_item_id],
+                    calculation_infos=calculation_infos,
+                    read_db_order=read_db_order
+                )
+                full_sell_price_with_gst = round(raw_sell_price * (1.0 + gst_rate), 2)
+                total_return_qty_amount = round(inc_quantity * full_sell_price_with_gst, 2)
                 founded_serialno=[]
                 existing_serial_ids = [s.get('id') for s in (items_map[inc_item_id].get('serialno_infos') or [])]
                 
