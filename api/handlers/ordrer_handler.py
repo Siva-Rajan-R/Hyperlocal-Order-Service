@@ -137,8 +137,9 @@ class HandleOrderRequest:
         return r
 
     async def get(self,data:GetAllOrderSchema):
-        from infras.primary_db.services.order_service import OrdersService
-        res=await OrdersService(session=self.session).get(data=data)
+        # from infras.primary_db.services.order_service import OrdersService
+        # res=await OrdersService(session=self.session).get(data=data)
+        res=await OrderReadDbRepo.get(data)
         ic(res)
 
         return SuccessResponseTypDict(
@@ -150,9 +151,10 @@ class HandleOrderRequest:
             data=res
         )
     
-    async def getby_shop_id(self,data:GetOrderByShopIdSchema):
-        from infras.primary_db.services.order_service import OrdersService
-        res=await OrdersService(session=self.session).getby_shop_id(data=data)
+    async def getby_shop_id(self, data: GetOrderByShopIdSchema):
+        # # from infras.primary_db.services.order_service import OrdersService
+        # # res=await OrdersService(session=self.session).getby_shop_id(data=data)
+        res = await OrderReadDbRepo.get_by_shop_id_filtered(data=data)
         out_data = res.get("datas", res) if isinstance(res, dict) and "datas" in res else res
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
@@ -160,20 +162,18 @@ class HandleOrderRequest:
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=out_data
+            data=res
         )
     
-    async def getby_customer_id(self,data:GetOrderByCustomerIdSchema):
-        from infras.primary_db.services.order_service import OrdersService
-        res=await OrdersService(session=self.session).getby_customer_id(data=data)
-        out_data = res.get("datas", res) if isinstance(res, dict) and "datas" in res else res
+    async def getby_customer_id(self, data: GetOrderByCustomerIdSchema):
+        res = await OrderReadDbRepo.getby_customer_id(data=data)
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
                 success=True,
                 msg="Order fetched successfully"
             ),
-            data=out_data
+            data=res
         )
     
     async def getby_id(self,data:GetOrderByIdSchema):
