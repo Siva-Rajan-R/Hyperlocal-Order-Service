@@ -6,6 +6,38 @@ import re
 from datetime import datetime, timezone as dt_tz
 
 
+def _check_filter(data, attrs: tuple) -> bool:
+    for attr in attrs:
+        val = getattr(data, attr, None)
+        if val is not None:
+            if isinstance(val, str):
+                return val.strip().lower() in ("true", "1", "yes")
+            return bool(val)
+    return False
+
+def is_exclude_online(data) -> bool:
+    return _check_filter(data, (
+        'exclude_online', 'exclude_online_orders', 'exclude_online_order',
+    ))
+
+def is_exclude_offline(data) -> bool:
+    return _check_filter(data, (
+        'exclude_offline', 'exclude_offline_orders', 'exclude_offline_order', 'exclude_pos', 'exclude_direct',
+    ))
+
+def is_exclude_return(data) -> bool:
+    return _check_filter(data, (
+        'exclude_return', 'exclude_returns', 'exclude_returned',
+        'exclude_has_return', 'exclude_has_returns', 'exclude_with_return', 'exclude_with_returns'
+    ))
+
+def is_exclude_non_return(data) -> bool:
+    return _check_filter(data, (
+        'exclude_non_return', 'exclude_non_returns', 'exclude_no_return',
+        'exclude_no_returns', 'exclude_without_return', 'exclude_without_returns'
+    ))
+
+
 class OrderReadDbRepo:
 
     @classmethod
@@ -35,72 +67,118 @@ class OrderReadDbRepo:
         except ImportError:
             pytz = None
 
-        query = dict(base_query)
+        and_clauses = []
+        if base_query:
+            and_clauses.append(base_query)
 
         # --- status ---
         status = getattr(data, "status", None)
         if status:
             status_val = str(status.value if hasattr(status, "value") else status).strip().lower()
             if status_val in ("complete", "completed"):
-                query["status"] = {"$in": ["COMPLETED", "completed", "complete"]}
+                and_clauses.append({"status": {"$in": ["COMPLETED", "completed", "complete"]}})
             elif status_val in ("pending", "prning"):
-                query["status"] = {"$in": ["PENDING", "pending", "PRNING", "prning"]}
+                and_clauses.append({"status": {"$in": ["PENDING", "pending", "PRNING", "prning"]}})
             elif status_val in ("cancelled", "canceled", "cnacedeld"):
-                query["status"] = {"$in": ["CANCELLED", "CANCELED", "cancelled", "canceled", "cnacedeld"]}
+                and_clauses.append({"status": {"$in": ["CANCELLED", "CANCELED", "cancelled", "canceled", "cnacedeld"]}})
+            elif status_val == "online":
+                and_clauses.append({
+                    "$or": [
+                        {"origin": re.compile("^online$", re.IGNORECASE)},
+                        {"online_details": {"$exists": True, "$ne": None}},
+                    ]
+                })
+            elif status_val == "offline":
+                and_clauses.append({
+                    "origin": {"$nin": ["ONLINE", "online", "Online"]},
+                    "$or": [
+                        {"online_details": {"$exists": False}},
+                        {"online_details": None}
+                    ]
+                })
             else:
-                query["status"] = re.compile(f"^{re.escape(status_val)}$", re.IGNORECASE)
+                and_clauses.append({"status": re.compile(f"^{re.escape(status_val)}$", re.IGNORECASE)})
 
         # --- origin ---
         origin = getattr(data, "origin", None)
         if origin:
             origin_val = str(origin.value if hasattr(origin, "value") else origin).strip().upper()
             if origin_val == "ONLINE":
-                # treat orders with online_details OR origin=ONLINE as online
-                existing_or = query.pop("$or", None)
-                online_conds = [
-                    {"origin": re.compile("^online$", re.IGNORECASE)},
-                    {"online_details": {"$exists": True, "$ne": None}},
-                ]
-                query["$or"] = online_conds
+                and_clauses.append({
+                    "$or": [
+                        {"origin": re.compile("^online$", re.IGNORECASE)},
+                        {"online_details": {"$exists": True, "$ne": None}},
+                    ]
+                })
             else:
-                query["origin"] = re.compile(f"^{re.escape(origin_val)}$", re.IGNORECASE)
+                and_clauses.append({"origin": re.compile(f"^{re.escape(origin_val)}$", re.IGNORECASE)})
 
-        # --- online_only ---
-        online_only = getattr(data, "online_only", None)
-        if online_only is not None:
-            if online_only:
-                query["$or"] = [
+        # --- exclude_online / exclude_offline / online_only ---
+        ex_online = is_exclude_online(data) or (getattr(data, 'online_only', None) is False)
+        ex_offline = is_exclude_offline(data) or (getattr(data, 'online_only', None) is True)
+
+        if ex_online and ex_offline:
+            and_clauses.append({"_id": {"$exists": False}})  # Contradiction: match none
+        elif ex_online:
+            and_clauses.append({
+                "origin": {"$nin": ["ONLINE", "online", "Online"]},
+                "$or": [
+                    {"online_details": {"$exists": False}},
+                    {"online_details": None}
+                ]
+            })
+        elif ex_offline:
+            and_clauses.append({
+                "$or": [
                     {"origin": re.compile("^online$", re.IGNORECASE)},
                     {"online_details": {"$exists": True, "$ne": None}},
                 ]
-            else:
-                query["origin"] = {"$not": re.compile("^online$", re.IGNORECASE)}
-                query["$or"] = [
-                    {"online_details": {"$exists": False}},
-                    {"online_details": None},
+            })
+
+        # --- exclude_return / exclude_non_return ---
+        ex_ret = is_exclude_return(data)
+        ex_non_ret = is_exclude_non_return(data)
+
+        if ex_ret and ex_non_ret:
+            and_clauses.append({"_id": {"$exists": False}})  # Contradiction: match none
+        elif ex_ret:
+            and_clauses.append({
+                "$or": [
+                    {"returns": {"$exists": False}},
+                    {"returns": None},
+                    {"returns": {"$size": 0}},
+                    {"returns": []}
                 ]
+            })
+        elif ex_non_ret:
+            and_clauses.append({
+                "$and": [
+                    {"returns": {"$exists": True, "$ne": None, "$ne": []}},
+                    {"returns.0": {"$exists": True}}
+                ]
+            })
 
         # --- payment_method ---
         payment_method = getattr(data, "payment_method", None)
         if payment_method:
             pm = str(payment_method).upper()
-            query["$or"] = [
-                {f"payment_infos.{pm}": {"$exists": True}},
-                {"payment_infos": {"$elemMatch": {"mode": re.compile(f"^{re.escape(pm)}$", re.IGNORECASE)}}},
-            ]
+            and_clauses.append({
+                "$or": [
+                    {f"payment_infos.{pm}": {"$exists": True}},
+                    {"payment_infos": {"$elemMatch": {"mode": re.compile(f"^{re.escape(pm)}$", re.IGNORECASE)}}},
+                ]
+            })
 
         # --- payment_status (via pending_amount field stored in MongoDB) ---
         payment_status_filter = getattr(data, "payment_status", None)
         if payment_status_filter:
             p_status = str(payment_status_filter).lower().replace("_", " ").strip()
             if p_status == "paid":
-                query["pending_amount"] = {"$in": [0, 0.0]}
+                and_clauses.append({"pending_amount": {"$in": [0, 0.0]}})
             elif p_status in ("not paid", "unpaid"):
-                query["pending_amount"] = {"$gt": 0}
-                query["payment_status"] = re.compile("^pending$", re.IGNORECASE)
+                and_clauses.append({"pending_amount": {"$gt": 0}, "payment_status": re.compile("^pending$", re.IGNORECASE)})
             elif p_status in ("partially paid", "partialy paid", "partially_paid"):
-                query["pending_amount"] = {"$gt": 0}
-                query["payment_status"] = {"$not": re.compile("^pending$", re.IGNORECASE)}
+                and_clauses.append({"pending_amount": {"$gt": 0}, "payment_status": {"$not": re.compile("^pending$", re.IGNORECASE)}})
 
         # --- date range (timezone-aware) ---
         tz_str = "Asia/Kolkata"
@@ -118,8 +196,6 @@ class OrderReadDbRepo:
         from_date = getattr(data, "from_date", None)
         to_date = getattr(data, "to_date", None)
 
-        date_conditions = []
-
         if from_date and user_tz:
             from_str = str(from_date).strip()
             if len(from_str) <= 10:
@@ -128,7 +204,7 @@ class OrderReadDbRepo:
                 from_dt = user_tz.localize(
                     datetime.strptime(from_str[:19], "%Y-%m-%d %H:%M:%S")
                 ).astimezone(dt_tz.utc)
-                date_conditions.append(
+                and_clauses.append(
                     {"$or": [{"created_at": {"$gte": from_dt}}, {"date": {"$gte": from_dt}}]}
                 )
             except Exception as ex:
@@ -142,22 +218,31 @@ class OrderReadDbRepo:
                 to_dt = user_tz.localize(
                     datetime.strptime(to_str[:19], "%Y-%m-%d %H:%M:%S")
                 ).astimezone(dt_tz.utc)
-                date_conditions.append(
+                and_clauses.append(
                     {"$or": [{"created_at": {"$lte": to_dt}}, {"date": {"$lte": to_dt}}]}
                 )
             except Exception as ex:
                 ic(f"[ReadDB] to_date parse error: {ex}")
 
-        if date_conditions:
-            existing_and = query.pop("$and", [])
-            query["$and"] = existing_and + date_conditions
-
         # --- text search ---
-        search_term = getattr(data, "query", None)
+        search_term = getattr(data, "query", None) or getattr(data, "q", None)
         if search_term and str(search_term).strip():
-            query = cls._build_search_query(query, str(search_term).strip())
+            pattern = re.compile(f".*{re.escape(str(search_term).strip())}.*", re.IGNORECASE)
+            and_clauses.append({
+                "$or": [
+                    {"id": {"$regex": pattern}},
+                    {"ui_id": {"$regex": pattern}},
+                    {"origin": {"$regex": pattern}},
+                    {"status": {"$regex": pattern}},
+                    {"shop_id": {"$regex": pattern}},
+                ]
+            })
 
-        return query
+        if not and_clauses:
+            return {}
+        if len(and_clauses) == 1:
+            return and_clauses[0]
+        return {"$and": and_clauses}
 
     @classmethod
     async def replace_order(cls, data: dict):

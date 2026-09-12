@@ -13,6 +13,27 @@ class ExportDataRequestSchema(BaseModel):
     status: Optional[str] = Field(default=None, description="Status filter")
     customer_id: Optional[str] = Field(default=None, description="Customer filter")
     origin: Optional[str] = Field(default=None, description="Order origin: POS or ONLINE")
+    exclude_online: Optional[bool] = None
+    exclude_online_orders: Optional[bool] = None
+    exclude_online_order: Optional[bool] = None
+    exclude_offline: Optional[bool] = None
+    exclude_offline_orders: Optional[bool] = None
+    exclude_offline_order: Optional[bool] = None
+    exclude_pos: Optional[bool] = None
+    exclude_direct: Optional[bool] = None
+    exclude_return: Optional[bool] = None
+    exclude_returns: Optional[bool] = None
+    exclude_returned: Optional[bool] = None
+    exclude_has_return: Optional[bool] = None
+    exclude_has_returns: Optional[bool] = None
+    exclude_with_return: Optional[bool] = None
+    exclude_with_returns: Optional[bool] = None
+    exclude_non_return: Optional[bool] = None
+    exclude_non_returns: Optional[bool] = None
+    exclude_no_return: Optional[bool] = None
+    exclude_no_returns: Optional[bool] = None
+    exclude_without_return: Optional[bool] = None
+    exclude_without_returns: Optional[bool] = None
 
 class ExportJobResponseSchema(BaseModel):
     job_id: str

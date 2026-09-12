@@ -135,6 +135,38 @@ exchanged_items_subq = (
     .group_by(exchange_group_subq.c.parent_order_id)
 ).subquery()
 
+def _check_filter(data, attrs: tuple) -> bool:
+    for attr in attrs:
+        val = getattr(data, attr, None)
+        if val is not None:
+            if isinstance(val, str):
+                return val.strip().lower() in ("true", "1", "yes")
+            return bool(val)
+    return False
+
+def is_exclude_online(data) -> bool:
+    return _check_filter(data, (
+        'exclude_online', 'exclude_online_orders', 'exclude_online_order',
+    ))
+
+def is_exclude_offline(data) -> bool:
+    return _check_filter(data, (
+        'exclude_offline', 'exclude_offline_orders', 'exclude_offline_order', 'exclude_pos', 'exclude_direct',
+    ))
+
+def is_exclude_return(data) -> bool:
+    return _check_filter(data, (
+        'exclude_return', 'exclude_returns', 'exclude_returned',
+        'exclude_has_return', 'exclude_has_returns', 'exclude_with_return', 'exclude_with_returns'
+    ))
+
+def is_exclude_non_return(data) -> bool:
+    return _check_filter(data, (
+        'exclude_non_return', 'exclude_non_returns', 'exclude_no_return',
+        'exclude_no_returns', 'exclude_without_return', 'exclude_without_returns'
+    ))
+
+
 class OrdersRepo(BaseRepoModel):
     
     def __init__(self, session:AsyncSession):
@@ -159,7 +191,7 @@ class OrdersRepo(BaseRepoModel):
         super().__init__(session)
 
     def _build_filter_conds(self, data):
-        from ..models.order_model import OnlineOrderModel
+        from ..models.order_model import OnlineOrderModel, Returns
         import pytz
 
         conds = []
@@ -190,6 +222,28 @@ class OrdersRepo(BaseRepoModel):
                 conds.append(func.lower(Orders.origin) == origin_val)
         if hasattr(data, 'payment_method') and getattr(data, 'payment_method'):
             conds.append(func.cast(Orders.payment_infos, String).ilike(f"%{data.payment_method.upper()}%"))
+
+        # Exclusion filters for online / offline
+        ex_online = is_exclude_online(data) or (getattr(data, 'online_only', None) is False)
+        ex_offline = is_exclude_offline(data) or (getattr(data, 'online_only', None) is True)
+
+        if ex_online and ex_offline:
+            conds.append(text("1=0"))
+        elif ex_online:
+            conds.append(and_(func.lower(Orders.origin) != "online", Orders.id.not_in(select(OnlineOrderModel.order_id))))
+        elif ex_offline:
+            conds.append(or_(func.lower(Orders.origin) == "online", Orders.id.in_(select(OnlineOrderModel.order_id))))
+
+        # Exclusion filters for returns
+        ex_ret = is_exclude_return(data)
+        ex_non_ret = is_exclude_non_return(data)
+
+        if ex_ret and ex_non_ret:
+            conds.append(text("1=0"))
+        elif ex_ret:
+            conds.append(Orders.id.not_in(select(Returns.order_id)))
+        elif ex_non_ret:
+            conds.append(Orders.id.in_(select(Returns.order_id)))
 
         # Timezone-aware date range filtering
         tz_str = "Asia/Kolkata"
@@ -225,11 +279,6 @@ class OrdersRepo(BaseRepoModel):
             except Exception as ex:
                 ic(f"Error parsing to_date: {ex}")
 
-        if hasattr(data, 'online_only') and getattr(data, 'online_only') is not None:
-            if data.online_only:
-                conds.append(or_(func.lower(Orders.origin) == "online", Orders.id.in_(select(OnlineOrderModel.order_id))))
-            else:
-                conds.append(and_(func.lower(Orders.origin) != "online", Orders.id.not_in(select(OnlineOrderModel.order_id))))
         if hasattr(data, 'payment_status') and getattr(data, 'payment_status'):
             from sqlalchemy import Float
             total_paid_object = select(func.coalesce(func.sum(func.cast(text("value"), Float)), 0.0)).select_from(func.jsonb_each(Orders.payment_infos)).scalar_subquery()
