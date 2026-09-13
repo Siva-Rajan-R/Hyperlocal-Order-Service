@@ -170,7 +170,7 @@ class MessagingQueueOrderExchangeProducer:
                             exchange_name="activity_logs.exchange",
                             payload={
                                 "shop_id": original_order.get("shop_id"),
-                                **get_activity_log_user_info(),
+                                **get_activity_log_user_info(datas.get("user_infos") or datas.get("user_info") or exchange_payload.get("user_infos") or exchange_payload.get("user_info") or current_user_ctx.get()),
                                 "service": "Exchange",
                                 "action": "CREATED",
                                 "entity_type": "EXCHANGE",
@@ -296,7 +296,7 @@ class MessagingQueueOrderExchangeProducer:
                             exchange_name="activity_logs.exchange",
                             payload={
                                 "shop_id": shop_id,
-                                **get_activity_log_user_info(),
+                                **get_activity_log_user_info(datas.get("user_infos") or datas.get("user_info") or exchange_payload.get("user_infos") or exchange_payload.get("user_info") or current_user_ctx.get()),
                                 "service": "Sales-Order",
                                 "action": "EXCHANGE",
                                 "entity_type": "SALES-EXCHANGE",

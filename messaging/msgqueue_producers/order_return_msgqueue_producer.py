@@ -198,7 +198,7 @@ class MessagingQueueOrderReturnProducer:
                                 exchange_name="activity_logs.exchange",
                                 payload={
                                     "shop_id": shop_id,
-                                    **get_activity_log_user_info(),
+                                    **get_activity_log_user_info(datas.get("user_infos") or datas.get("user_info") or order_return_payload.get("user_infos") or order_return_payload.get("user_info") or current_user_ctx.get()),
                                     "service": "Sales-Order",
                                     "action": "RETURN",
                                     "entity_type": f"SALES-RETURN",

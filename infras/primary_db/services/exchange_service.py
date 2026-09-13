@@ -1,3 +1,4 @@
+from core.utils.user_context import current_user_ctx
 from typing import Optional
 from fastapi import HTTPException
 from icecream import ic
@@ -478,9 +479,13 @@ class ExchangeService:
                     "amount_diff": amount_diff,
                     "payment_status": payment_status,
                     "replacement_ui_id": replacement_ui_id,
-                    "original_order": order_data
+                    "original_order": order_data,
+                    "user_infos": current_user_ctx.get(),
+                    "user_info": current_user_ctx.get()
                 },
                 "executing_user_id": executing_user_id,
+                "user_infos": current_user_ctx.get(),
+                "user_info": current_user_ctx.get()
             }
 
             saga_id = generate_uuid()

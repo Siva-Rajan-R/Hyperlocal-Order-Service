@@ -1,3 +1,4 @@
+from core.utils.user_context import current_user_ctx
 from core.data_formats.enums.order_enum import OrderOriginEnum, OrderStatusEnum
 from models.service_models.base_service_model import BaseServiceModel
 from infras.primary_db.repos.order_repo import OrdersRepo
@@ -378,6 +379,11 @@ class ReturnService:
 
             saga_data=return_data
             saga_data["executing_user_id"] = executing_user_id
+            saga_data["user_infos"] = current_user_ctx.get()
+            saga_data["user_info"] = current_user_ctx.get()
+            if "order_return" in saga_data and isinstance(saga_data["order_return"], dict):
+                saga_data["order_return"]["user_infos"] = current_user_ctx.get()
+                saga_data["order_return"]["user_info"] = current_user_ctx.get()
             await SagaProducer.emit(
                 session=self.session,
                 saga_payload=CreateSagaStateSchema(

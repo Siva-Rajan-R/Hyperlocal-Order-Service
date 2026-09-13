@@ -102,6 +102,11 @@ async def producer_main_controller(msg:AbstractIncomingMessage):
             
             ic(saga_datas)
             
+                        # Restore user context from saga data
+            u_info = (saga_datas.get("data") or {}).get("user_infos") or (saga_datas.get("data") or {}).get("user_info")
+            if u_info and isinstance(u_info, dict):
+                from core.utils.user_context import current_user_ctx
+                current_user_ctx.set(u_info)
             method = getattr(producer(payload=payload,headers=headers,saga_datas=saga_datas), reply_entity_name, None)
             ic(method)
             if not method:
