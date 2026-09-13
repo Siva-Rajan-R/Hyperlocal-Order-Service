@@ -1,4 +1,6 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 from arq.connections import RedisSettings
 from infras.primary_db.services.order_export_service import process_order_export
 

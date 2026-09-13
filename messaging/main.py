@@ -48,6 +48,12 @@ class RabbitMQMessagingConfig:
         return queue
     
     async def publish_event(self,routing_key:str,payload:dict,headers:dict,exchange_name:str):
+        if not exchange_name or str(exchange_name).strip().lower() in ("none", ""):
+            ic(f"Skipping publish_event because exchange_name is '{exchange_name}'")
+            return False
+        if not routing_key or str(routing_key).strip().lower() in ("none", ""):
+            ic(f"Skipping publish_event because routing_key is '{routing_key}'")
+            return False
         ch=await self._get_channel()
         exchange=await ch.get_exchange(name=exchange_name)
         message=Message(
@@ -60,6 +66,7 @@ class RabbitMQMessagingConfig:
             routing_key=routing_key
         )
         ic(f"Event published successfully ✅ => {routing_key}, {exchange_name}")
+        return True
 
 
     async def consume_event(self,queue_name:str,handler):

@@ -169,14 +169,21 @@ async def service_main_controller(msg:AbstractIncomingMessage):
             return False
         
         finally:
-            ic("Finally publishing the event to reply exchange")
-            
-            await RabbitMQMessagingConfig().publish_event(
-                routing_key=reply_key,
-                payload=payload,
-                headers=headers,
-                exchange_name=reply_exchange
-            )
+            if (
+                reply_exchange and str(reply_exchange).strip().lower() not in ("none", "") and
+                reply_key and str(reply_key).strip().lower() not in ("none", "") and
+                reply_entity_name and str(reply_entity_name).strip().lower() not in ("none", "")
+            ):
+                ic("Finally publishing the event to reply exchange")
+                try:
+                    await RabbitMQMessagingConfig().publish_event(
+                        routing_key=reply_key,
+                        payload=payload,
+                        headers=headers,
+                        exchange_name=reply_exchange
+                    )
+                except Exception as pub_err:
+                    ic(f"Failed to publish reply event to {reply_exchange} with routing key {reply_key}: {pub_err}")
 
             await msg.ack()
 

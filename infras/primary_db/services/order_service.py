@@ -1,3 +1,4 @@
+from core.utils.user_context import current_user_ctx
 from core.utils.user_context import get_activity_log_user_info
 from ..repos.order_repo import OrdersRepo,OrderItems
 from core.data_formats.enums.order_enum import OrderOriginEnum,OrderStatusEnum,OrderReturnTypeEnum
@@ -67,7 +68,7 @@ class OrdersService:
         ic(cart_data)
         order_data={**data.model_dump(mode="json"),"items":cart_data}
 
-        saga_data={"orders":order_data, "executing_user_id": executing_user_id}
+        saga_data={"orders":order_data, "executing_user_id": executing_user_id, "user_infos": current_user_ctx.get(), "user_info": current_user_ctx.get()}
         ic(product_ids)
 
         if data.customer_id:
