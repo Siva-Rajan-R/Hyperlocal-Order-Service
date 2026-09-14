@@ -442,7 +442,10 @@ class OrderReadDbRepo:
             base_query = {
                 "type": {"$ne": "EXCHANGE"},
                 "shop_id": data.shop_id,
-                "customer.customer_id": data.customer_id,
+                "$or": [
+                    {"customer_id": data.customer_id},
+                    {"customer.customer_id": data.customer_id}
+                ]
             }
             query = cls._build_filter_query(base_query, data)
             ic(f"[ReadDB] getby_customer_id() query: {query}")

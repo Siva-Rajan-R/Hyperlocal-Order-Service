@@ -349,15 +349,16 @@ class MessagingQueueOrderProducer:
 
                 await repo.create_bulk_items(datas=order_items_toadd)
 
-                on_credit_amt=0
+                on_credit_amt = 0
                 total_amount_paid = 0
-                for method,amount in payment_infos.items():
-                    if method=="ON_CREDIT":
-                        on_credit_amt+=amount
-                    total_amount_paid+=amount
+                for method, amount in payment_infos.items():
+                    if method == "ON_CREDIT":
+                        on_credit_amt += amount
+                    else:
+                        total_amount_paid += amount
                 total_ord_cost = float(item_infos['total_order_amount'])
-                outstanding_amount = abs(total_ord_cost - total_amount_paid)
-                ic(total_amount_paid,total_ord_cost,outstanding_amount)
+                outstanding_amount = on_credit_amt if on_credit_amt > 0 else max(0.0, total_ord_cost - total_amount_paid)
+                ic(total_amount_paid, total_ord_cost, outstanding_amount)
 
                 if outstanding_amount == 0:
                     outstanding_status = "COMPLETED"

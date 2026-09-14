@@ -16,7 +16,14 @@ class OrderStatsReadDbRepo:
                             {
                                 "$group": {
                                     "_id": None,
-                                    "total_order_value": {"$sum": "$total_sellprice"},
+                                    "total_order_value": {
+                                        "$sum": {
+                                            "$ifNull": [
+                                                "$total_sellprice",
+                                                {"$ifNull": ["$calculation_infos.total", "$item_infos.total_order_amount"]}
+                                            ]
+                                        }
+                                    },
                                     "total_orders": {"$sum": 1},
                                     "registered_customer_count": {
                                         "$sum": {"$cond": [{"$ifNull": ["$customer.customer_id", False]}, 1, 0]}
