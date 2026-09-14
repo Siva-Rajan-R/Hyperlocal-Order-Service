@@ -265,10 +265,9 @@ class MessagingQueueOrderProducer:
                             except ValueError:
                                 gst_rate = 0.0
                             
-                            # Calculate GST amount and raw sell price
-                            # Since sell_price is inclusive of GST, raw_sell_price = sell_price / (1 + gst_rate)
-                            raw_sell_price = sell_price_val / (1.0 + gst_rate)
-                            gst_amount = sell_price_val - raw_sell_price
+                            # Base selling price is sell_price_val (excl. GST)
+                            raw_sell_price = sell_price_val
+                            gst_amount = sell_price_val * gst_rate
                             total_item_gst = gst_amount * stocks
                             
                             # total_order_amount must exclude GST (raw amount)
