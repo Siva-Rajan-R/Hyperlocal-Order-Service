@@ -15,6 +15,7 @@ load_dotenv()
 
 
 BASE_URL = f"{os.getenv('INVENTORY_SERVICE_URL', 'http://127.0.0.1:8004')}/inventories"
+SHOP_SERVICE_URL = os.getenv("SHOP_SERVICE_URL", "http://127.0.0.1:8001")
 TTL_MINUTES = 3
 
 async def create_reservation(data:CartReserveRequest):
@@ -23,6 +24,27 @@ async def create_reservation(data:CartReserveRequest):
     ic(existing_cart)
     if existing_cart is None:
         raise HTTPException(status_code=400, detail="Invalid or expired session")
+    
+    # Check if shop is visibility only
+    if data.shop_id:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                shop_res = await client.get(f"{SHOP_SERVICE_URL}/shops/by/{data.shop_id}")
+                if shop_res.status_code == 200:
+                    shop_data = shop_res.json().get("data") or shop_res.json()
+                    add_infos = shop_data.get("additional_infos") or shop_data.get("datas") or {}
+                    vis_only = shop_data.get("visibility_only", add_infos.get("visibility_only", False))
+                    ord_enabled = shop_data.get("is_ordering_enabled", add_infos.get("is_ordering_enabled", not vis_only))
+                    if vis_only or not ord_enabled:
+                        shop_name = shop_data.get("name", data.shop_id)
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Online ordering is not available for shop '{shop_name}'. This shop is listed for visibility only."
+                        )
+        except HTTPException:
+            raise
+        except Exception as e:
+            ic(f"Error checking shop status in order service: {e}")
     
     # Fetch product to validate sub units
     product_data = {}
