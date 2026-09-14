@@ -127,7 +127,29 @@ async def commit_reservation(session_id:str, entity_id: Optional[str] = None):
     # 1. Commit reservations in inventory service
     async with httpx.AsyncClient() as client:
         try:
-            req_body = {"session_id": session_id, "entity_name": "OFFLINE_SALES", "record_stock": True}
+            try:
+                from core.utils.user_context import current_user_ctx
+                u_ctx = current_user_ctx.get() or {}
+            except Exception:
+                u_ctx = {}
+            u_name = u_ctx.get("name") or u_ctx.get("user_name") or ""
+            u_email = u_ctx.get("email") or ""
+            added_by_str = u_name or u_email or "System"
+            if u_name and u_email and f"- {u_email}" not in added_by_str:
+                added_by_str = f"{u_name} - {u_email}"
+
+            req_body = {
+                "session_id": session_id,
+                "entity_name": "OFFLINE_SALES",
+                "record_stock": True,
+                "added_by": added_by_str,
+                "user_id": u_ctx.get("user_id") or u_ctx.get("id"),
+                "user_name": u_name,
+                "user_email": u_email,
+                "user_role": u_ctx.get("role"),
+                "user_info": u_ctx,
+                "user_infos": u_ctx
+            }
             if entity_id:
                 req_body["entity_id"] = entity_id
             response = await client.post(f"{BASE_URL}/reservations/commit", json=req_body)

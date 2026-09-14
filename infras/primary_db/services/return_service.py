@@ -288,19 +288,33 @@ class ReturnService:
                         founded_serialno.append(matched_sn)
 
                 
+                u_ctx = current_user_ctx.get() or {}
+                u_name = u_ctx.get("name") or u_ctx.get("user_name") or ""
+                u_email = u_ctx.get("email") or ""
+                added_by_str = u_name or u_email or "System"
+                if u_name and u_email and f"- {u_email}" not in added_by_str:
+                    added_by_str = f"{u_name} - {u_email}"
+
                 products_toupdate.append(
                     {
-                        "shop_id":shop_id,
-                        "product_id":items_map[inc_item_id]['product_id'],
-                        "variant_id":items_map[inc_item_id]['variant_id'],
-                        "batch_infos":{"id":items_map[inc_item_id]['batch_id']} if items_map[inc_item_id]['batch_id'] else None,
-                        "serialno_infos":founded_serialno,
-                        "stocks":inc_quantity,
-                        "entity_name":"OFFLINE_SALES_RETURN",
-                        "type":"INCREMENT",
-                        "create_stock_mov_adj":True,
+                        "shop_id": shop_id,
+                        "product_id": items_map[inc_item_id]['product_id'],
+                        "variant_id": items_map[inc_item_id]['variant_id'],
+                        "batch_infos": {"id": items_map[inc_item_id]['batch_id']} if items_map[inc_item_id]['batch_id'] else None,
+                        "serialno_infos": founded_serialno,
+                        "stocks": inc_quantity,
+                        "entity_name": "OFFLINE_SALES_RETURN",
+                        "type": "INCREMENT",
+                        "create_stock_mov_adj": True,
                         "ui_id": ui_id,
-                        "order_id": order_id
+                        "order_id": order_id,
+                        "added_by": added_by_str,
+                        "user_id": u_ctx.get("user_id") or u_ctx.get("id"),
+                        "user_name": u_name,
+                        "user_email": u_email,
+                        "user_role": u_ctx.get("role"),
+                        "user_info": u_ctx,
+                        "user_infos": u_ctx
                     }
                 )
 
