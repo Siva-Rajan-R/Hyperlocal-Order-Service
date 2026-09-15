@@ -258,7 +258,16 @@ class MessagingQueueOrderProducer:
                             # Update transaction metadata
                             item_infos['total_order_items'] += 1
                             item_infos['total_order_qty'] += stocks
-                            sell_price_val = float(pricing_infos.get('sell_price', 0))
+                            
+                            is_online_order = str(origin).upper() == "ONLINE"
+                            if is_online_order:
+                                online_sp = pricing_infos.get('online_sell_price')
+                                if online_sp is not None and float(online_sp) > 0:
+                                    sell_price_val = float(online_sp)
+                                else:
+                                    sell_price_val = float(pricing_infos.get('sell_price', 0))
+                            else:
+                                sell_price_val = float(pricing_infos.get('sell_price', 0))
                             
                             # Parse GST percentage to raw rate
                             gst_val = gst.replace('%', '').strip() if isinstance(gst, str) else '0'
