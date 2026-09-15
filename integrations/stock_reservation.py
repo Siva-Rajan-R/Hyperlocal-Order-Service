@@ -117,7 +117,7 @@ async def create_reservation(data:CartReserveRequest):
 
 
 
-async def commit_reservation(session_id:str, entity_id: Optional[str] = None):
+async def commit_reservation(session_id:str, entity_id: Optional[str] = None, origin: Optional[str] = None):
     cart = OrderCartCacheModel(session_id)
     items = await cart.get_cart()
     
@@ -138,9 +138,12 @@ async def commit_reservation(session_id:str, entity_id: Optional[str] = None):
             if u_name and u_email and f"- {u_email}" not in added_by_str:
                 added_by_str = f"{u_name} - {u_email}"
 
+            is_online = str(origin).upper() == "ONLINE" if origin else False
+            entity_name = "ONLINE_SALES" if is_online else "OFFLINE_SALES"
+
             req_body = {
                 "session_id": session_id,
-                "entity_name": "OFFLINE_SALES",
+                "entity_name": entity_name,
                 "record_stock": True,
                 "added_by": added_by_str,
                 "user_id": u_ctx.get("user_id") or u_ctx.get("id"),

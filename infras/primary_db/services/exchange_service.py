@@ -263,6 +263,9 @@ class ExchangeService:
                     "reason": exc_item_dict.get("reason"),
                 })
 
+                is_online_order = str(order_data.get("origin", "")).upper() == "ONLINE"
+                exchange_entity_name = "ONLINE_SALES_EXCHANGE" if is_online_order else "OFFLINE_SALES_EXCHANGE"
+
                 products_toupdate.append({
                     "shop_id": shop_id,
                     "product_id": orig.get("product_id"),
@@ -270,7 +273,7 @@ class ExchangeService:
                     "batch_infos": {"id": orig["batch_id"]} if orig.get("batch_id") else None,
                     "serialno_infos": founded_serialno,
                     "stocks": qty_in_base,
-                    "entity_name": "OFFLINE_SALES_EXCHANGE",
+                    "entity_name": exchange_entity_name,
                     "type": "INCREMENT",
                     "create_stock_mov_adj": True,
                 })
@@ -371,7 +374,7 @@ class ExchangeService:
                         "batch_infos": {"id": rep_item.batch_id} if rep_item.batch_id else None,
                         "serialno_infos": replacement_serialno,
                         "stocks": rep_qty_in_base,
-                        "entity_name": "OFFLINE_SALES_EXCHANGE",   # DECREMENT — stock goes out
+                        "entity_name": exchange_entity_name,   # DECREMENT — stock goes out
                         "type": "DECREMENT",
                         "create_stock_mov_adj": True,
                     })

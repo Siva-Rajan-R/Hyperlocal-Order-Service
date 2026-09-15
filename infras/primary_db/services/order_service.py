@@ -56,7 +56,7 @@ class OrdersService:
             import datetime
             ui_id_val = f"ORD-{int(datetime.datetime.utcnow().timestamp())}"
 
-        reservation_complete_res=await commit_reservation(session_id=data.session_id, entity_id=ui_id_val)
+        reservation_complete_res=await commit_reservation(session_id=data.session_id, entity_id=ui_id_val, origin=data.origin)
         if not reservation_complete_res:
             ic("Cant able to reserve the stocks please try again")
             return False

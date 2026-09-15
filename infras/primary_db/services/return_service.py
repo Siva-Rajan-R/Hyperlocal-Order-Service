@@ -295,6 +295,9 @@ class ReturnService:
                 if u_name and u_email and f"- {u_email}" not in added_by_str:
                     added_by_str = f"{u_name} - {u_email}"
 
+                is_online_order = str(origin).upper() == "ONLINE"
+                return_entity_name = "ONLINE_SALES_RETURN" if is_online_order else "OFFLINE_SALES_RETURN"
+
                 products_toupdate.append(
                     {
                         "shop_id": shop_id,
@@ -303,7 +306,7 @@ class ReturnService:
                         "batch_infos": {"id": items_map[inc_item_id]['batch_id']} if items_map[inc_item_id]['batch_id'] else None,
                         "serialno_infos": founded_serialno,
                         "stocks": inc_quantity,
-                        "entity_name": "OFFLINE_SALES_RETURN",
+                        "entity_name": return_entity_name,
                         "type": "INCREMENT",
                         "create_stock_mov_adj": True,
                         "ui_id": ui_id,
