@@ -2,13 +2,9 @@ from enum import Enum
 
 class OrderStatusEnum(str, Enum):
     PENDING = "PENDING"
-    PROCESSING = "PROCESSING"
-    SHIPPED = "SHIPPED"
+    ACCEPTED = "ACCEPTED"
     DELIVERED = "DELIVERED"
-    COMPLETED = "COMPLETED"
     CANCELED = "CANCELED"
-    REFUNDED = "REFUNDED"
-    EXCHANGED = "EXCHANGED"
 
 class OrderOriginEnum(str, Enum):
     ONLINE = "ONLINE"

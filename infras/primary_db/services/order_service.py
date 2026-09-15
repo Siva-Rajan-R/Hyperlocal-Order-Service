@@ -155,7 +155,7 @@ class OrdersService:
             # --- Delivery Code Logic ---
             from infras.read_db.repos.delivery_code_repo import DeliveryCodeRepo
             new_status = data.status.upper() if data.status else None
-            if new_status in ("PROCESSING", "SHIPPED"):
+            if new_status in ("ACCEPTED", "PROCESSING", "SHIPPED"):
                 await DeliveryCodeRepo.generate_and_store_code(shop_id=data.shop_id, order_id=data.id)
             elif new_status in ("CANCELED", "CANCELLED", "DELIVERED"):
                 await DeliveryCodeRepo.delete_code(shop_id=data.shop_id, order_id=data.id)
