@@ -66,7 +66,7 @@ class OrdersService:
             ic(item)
             product_ids.append(item['product_id'])
         ic(cart_data)
-        order_data={**data.model_dump(mode="json"),"items":cart_data}
+        order_data={**data.model_dump(mode="json"),"items":cart_data, "ui_id": ui_id_val}
 
         saga_data={"orders":order_data, "executing_user_id": executing_user_id, "user_infos": current_user_ctx.get(), "user_info": current_user_ctx.get()}
         ic(product_ids)

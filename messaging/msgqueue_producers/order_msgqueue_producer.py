@@ -116,11 +116,13 @@ class MessagingQueueOrderProducer:
             try:
                 order_id = generate_uuid()
                 
-                ui_id_res = await get_ui_id(shop_id=order_payload.get('shop_id'))
-                if isinstance(ui_id_res, dict) and "prefix" in ui_id_res:
-                    ui_id = f"{ui_id_res.get('prefix')}-{ui_id_res.get('current_number')}"
-                else:
-                    ui_id = f"PUR-{int(datetime.datetime.utcnow().timestamp())}"
+                ui_id = order_payload.get("ui_id")
+                if not ui_id:
+                    ui_id_res = await get_ui_id(shop_id=order_payload.get('shop_id'))
+                    if isinstance(ui_id_res, dict) and "prefix" in ui_id_res:
+                        ui_id = f"{ui_id_res.get('prefix')}-{ui_id_res.get('current_number')}"
+                    else:
+                        ui_id = f"ORD-{int(datetime.datetime.utcnow().timestamp())}"
                 product_res = datas.get("products") or []
                 shop_id = order_payload.get("shop_id")
                 calculation_infos = order_payload.get("calculation_infos") or {}
