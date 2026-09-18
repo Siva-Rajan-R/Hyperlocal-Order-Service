@@ -162,27 +162,8 @@ class MessagingQueueOrderExchangeProducer:
                                 "body": analytics_payload
                             }
                         )
-
-                        # 2. Activity Log Event
-                        order_name = replacement_ui_id or f"Order #{replacement_order_id[:8]}"
-                        await rabbitmq_msg_obj.publish_event(
-                            routing_key="activity_logs.routing.key",
-                            exchange_name="activity_logs.exchange",
-                            payload={
-                                "shop_id": original_order.get("shop_id"),
-                                **get_activity_log_user_info(datas.get("user_infos") or datas.get("user_info") or exchange_payload.get("user_infos") or exchange_payload.get("user_info") or current_user_ctx.get()),
-                                "service": "Exchange",
-                                "action": "CREATED",
-                                "entity_type": "EXCHANGE",
-                                "entity_id": str(replacement_order_id),
-                                "entity_name": str(order_name),
-                                "description": f"Processed Exchange for Order {order_name} with Exchange ID {exchange_toadd.get('ui_id')}",
-                                "changes": []
-                            },
-                            headers={}
-                        )
                     except Exception as e:
-                        ic(f"Failed to publish analytics or activity log event: {e}")
+                        ic(f"Failed to publish analytics event: {e}")
 
                     order_id = exchange_toadd.get("original_order_id")
                     shop_id = exchange_toadd.get("shop_id")
@@ -291,6 +272,8 @@ class MessagingQueueOrderExchangeProducer:
 
                     # ── Activity log ─────────────────────────────────────────────
                     try:
+                        orig_order_ui_id = (existing_order.get("ui_id") or existing_order.get("invoice_no") or order_id) if existing_order else order_id
+                        exchange_display_id = str(ui_id or exchange_id)
                         await rabbitmq_msg_obj.publish_event(
                             routing_key="activity_logs.routing.key",
                             exchange_name="activity_logs.exchange",
@@ -300,9 +283,10 @@ class MessagingQueueOrderExchangeProducer:
                                 "service": "Sales-Order",
                                 "action": "EXCHANGE",
                                 "entity_type": "SALES-EXCHANGE",
-                                "entity_id": exchange_id,
-                                "description": f"Exchange {ui_id} processed for order {order_id}",
-                                "changes": [{"field": "id", "before": str(order_id), "after": "EXCHANGE"}]
+                                "entity_id": exchange_display_id,
+                                "entity_name": f"{exchange_display_id} ({orig_order_ui_id})" if orig_order_ui_id else exchange_display_id,
+                                "description": f"Exchange {exchange_display_id} processed for order {orig_order_ui_id}",
+                                "changes": [{"field": "id", "before": str(orig_order_ui_id), "after": "EXCHANGE"}]
                             },
                             headers={}
                         )
@@ -315,7 +299,7 @@ class MessagingQueueOrderExchangeProducer:
                         import asyncio
                         asyncio.create_task(emit_notification(
                             title="Order Exchange Processed",
-                            message=f"Exchange {ui_id} for order '{order_id}' processed successfully.",
+                            message=f"Exchange {exchange_display_id} for order '{orig_order_ui_id}' processed successfully.",
                             type="info",
                             user_id=executing_user_id or shop_id,
                             additional_metadata={"exchange_id": exchange_id, "order_id": order_id}

@@ -166,6 +166,24 @@ def is_exclude_non_return(data) -> bool:
         'exclude_no_returns', 'exclude_without_return', 'exclude_without_returns'
     ))
 
+def is_exclude_accepted(data) -> bool:
+    return _check_filter(data, ('exclude_accepted', 'exclude_accept'))
+
+def is_exclude_pending(data) -> bool:
+    return _check_filter(data, ('exclude_pending', 'exclude_pendings'))
+
+def is_exclude_canceled(data) -> bool:
+    return _check_filter(data, ('exclude_canceled', 'exclude_cancelled', 'exclude_canceleed', 'exclude_cancle', 'exclude_cancel'))
+
+def is_exclude_out_for_delivery(data) -> bool:
+    return _check_filter(data, ('exclude_out_for_delivery', 'exclude_out_for_deleivery'))
+
+def is_exclude_delivered(data) -> bool:
+    return _check_filter(data, ('exclude_delivered', 'exclude_delevered'))
+
+def is_online_delivered_only(data) -> bool:
+    return _check_filter(data, ('online_delivered_only',))
+
 
 class OrdersRepo(BaseRepoModel):
     
@@ -214,6 +232,31 @@ class OrdersRepo(BaseRepoModel):
                     conds.append(func.lower(Orders.origin) == "offline")
             else:
                 conds.append(func.lower(Orders.status) == status_val)
+
+        # Status exclusions
+        excluded_statuses = []
+        if is_exclude_accepted(data):
+            excluded_statuses.extend(["accepted"])
+        if is_exclude_pending(data):
+            excluded_statuses.extend(["pending", "prning"])
+        if is_exclude_canceled(data):
+            excluded_statuses.extend(["canceled", "cancelled", "cnacedeld"])
+        if is_exclude_out_for_delivery(data):
+            excluded_statuses.extend(["out_for_delivery", "out-for-delivery"])
+        if is_exclude_delivered(data):
+            excluded_statuses.extend(["delivered"])
+
+        if excluded_statuses:
+            conds.append(func.lower(Orders.status).not_in(list(set(excluded_statuses))))
+
+        if is_online_delivered_only(data):
+            conds.append(
+                or_(
+                    func.lower(Orders.origin) != "online",
+                    func.lower(Orders.status) == "delivered"
+                )
+            )
+
         if hasattr(data, 'origin') and getattr(data, 'origin'):
             origin_val = str(data.origin).strip().lower()
             if origin_val == "online":

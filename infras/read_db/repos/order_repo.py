@@ -37,6 +37,24 @@ def is_exclude_non_return(data) -> bool:
         'exclude_no_returns', 'exclude_without_return', 'exclude_without_returns'
     ))
 
+def is_exclude_accepted(data) -> bool:
+    return _check_filter(data, ('exclude_accepted', 'exclude_accept'))
+
+def is_exclude_pending(data) -> bool:
+    return _check_filter(data, ('exclude_pending', 'exclude_pendings'))
+
+def is_exclude_canceled(data) -> bool:
+    return _check_filter(data, ('exclude_canceled', 'exclude_cancelled', 'exclude_canceleed', 'exclude_cancle', 'exclude_cancel'))
+
+def is_exclude_out_for_delivery(data) -> bool:
+    return _check_filter(data, ('exclude_out_for_delivery', 'exclude_out_for_deleivery'))
+
+def is_exclude_delivered(data) -> bool:
+    return _check_filter(data, ('exclude_delivered', 'exclude_delevered'))
+
+def is_online_delivered_only(data) -> bool:
+    return _check_filter(data, ('online_delivered_only',))
+
 
 class OrderReadDbRepo:
 
@@ -98,6 +116,39 @@ class OrderReadDbRepo:
                 })
             else:
                 and_clauses.append({"status": re.compile(f"^{re.escape(status_val)}$", re.IGNORECASE)})
+
+        # --- status exclusions ---
+        excluded_statuses = []
+        if is_exclude_accepted(data):
+            excluded_statuses.extend(["ACCEPTED", "accepted", "Accepted"])
+        if is_exclude_pending(data):
+            excluded_statuses.extend(["PENDING", "pending", "Pending", "PRNING", "prning"])
+        if is_exclude_canceled(data):
+            excluded_statuses.extend(["CANCELED", "CANCELLED", "canceled", "cancelled", "Cancelled", "Canceled", "cnacedeld"])
+        if is_exclude_out_for_delivery(data):
+            excluded_statuses.extend(["OUT_FOR_DELIVERY", "out_for_delivery", "OUT-FOR-DELIVERY", "out-for-delivery", "Out For Delivery", "Out for delivery"])
+        if is_exclude_delivered(data):
+            excluded_statuses.extend(["DELIVERED", "delivered", "Delivered"])
+
+        if excluded_statuses:
+            and_clauses.append({"status": {"$nin": list(set(excluded_statuses))}})
+
+        if is_online_delivered_only(data):
+            and_clauses.append({
+                "$or": [
+                    {
+                        "origin": {"$nin": ["ONLINE", "online", "Online"]},
+                        "online_details": None
+                    },
+                    {
+                        "origin": {"$nin": ["ONLINE", "online", "Online"]},
+                        "online_details": {"$exists": False}
+                    },
+                    {
+                        "status": {"$in": ["DELIVERED", "delivered", "Delivered"]}
+                    }
+                ]
+            })
 
         # --- origin ---
         origin = getattr(data, "origin", None)

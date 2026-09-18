@@ -192,6 +192,7 @@ class MessagingQueueOrderReturnProducer:
                             await OrderReadDbRepo.replace_order(existing_order)
 
                         try:
+                            order_ui_id = (existing_order.get("ui_id") or existing_order.get("invoice_no") or order_id) if existing_order else order_id
                             rabbitmq_msg_obj = RabbitMQMessagingConfig()
                             await rabbitmq_msg_obj.publish_event(
                                 routing_key="activity_logs.routing.key",
@@ -202,9 +203,10 @@ class MessagingQueueOrderReturnProducer:
                                     "service": "Sales-Order",
                                     "action": "RETURN",
                                     "entity_type": f"SALES-RETURN",
-                                    "entity_id": order_id,
-                                    "description": f"Returned order {order_id}",
-                                    "changes": [{"field": "id", "before": str(order_id), "after": "RETURN"}]
+                                    "entity_id": str(order_ui_id),
+                                    "entity_name": str(order_ui_id),
+                                    "description": f"Returned order {order_ui_id}",
+                                    "changes": [{"field": "id", "before": str(order_ui_id), "after": "RETURN"}]
                                 },
                                 headers={}
                             )

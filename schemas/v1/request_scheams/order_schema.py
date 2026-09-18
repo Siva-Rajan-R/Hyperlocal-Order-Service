@@ -62,7 +62,9 @@ class DeleteOrderSchema(BaseModel):
 class VerifyDeliverySchema(BaseModel):
     shop_id: str
     order_id: str
-    code: str
+    code: Optional[str] = None
+    otp: Optional[str] = None
+    delivery_otp: Optional[str] = None
 
 
 class GetAllOrderSchema(BaseModel):
@@ -99,6 +101,20 @@ class GetAllOrderSchema(BaseModel):
     exclude_no_returns:Optional[bool]=None
     exclude_without_return:Optional[bool]=None
     exclude_without_returns:Optional[bool]=None
+    exclude_accepted:Optional[bool]=None
+    exclude_accept:Optional[bool]=None
+    exclude_pending:Optional[bool]=None
+    exclude_pendings:Optional[bool]=None
+    exclude_canceled:Optional[bool]=None
+    exclude_cancelled:Optional[bool]=None
+    exclude_canceleed:Optional[bool]=None
+    exclude_cancle:Optional[bool]=None
+    exclude_cancel:Optional[bool]=None
+    exclude_out_for_delivery:Optional[bool]=None
+    exclude_out_for_deleivery:Optional[bool]=None
+    exclude_delivered:Optional[bool]=None
+    exclude_delevered:Optional[bool]=None
+    online_delivered_only:Optional[bool]=None
 
 
 class GetOrderByShopIdSchema(BaseModel):
@@ -135,6 +151,20 @@ class GetOrderByShopIdSchema(BaseModel):
     exclude_no_returns:Optional[bool]=None
     exclude_without_return:Optional[bool]=None
     exclude_without_returns:Optional[bool]=None
+    exclude_accepted:Optional[bool]=None
+    exclude_accept:Optional[bool]=None
+    exclude_pending:Optional[bool]=None
+    exclude_pendings:Optional[bool]=None
+    exclude_canceled:Optional[bool]=None
+    exclude_cancelled:Optional[bool]=None
+    exclude_canceleed:Optional[bool]=None
+    exclude_cancle:Optional[bool]=None
+    exclude_cancel:Optional[bool]=None
+    exclude_out_for_delivery:Optional[bool]=None
+    exclude_out_for_deleivery:Optional[bool]=None
+    exclude_delivered:Optional[bool]=None
+    exclude_delevered:Optional[bool]=None
+    online_delivered_only:Optional[bool]=None
 
 
 class GetOrderByCustomerIdSchema(BaseModel):
@@ -172,6 +202,20 @@ class GetOrderByCustomerIdSchema(BaseModel):
     exclude_no_returns:Optional[bool]=None
     exclude_without_return:Optional[bool]=None
     exclude_without_returns:Optional[bool]=None
+    exclude_accepted:Optional[bool]=None
+    exclude_accept:Optional[bool]=None
+    exclude_pending:Optional[bool]=None
+    exclude_pendings:Optional[bool]=None
+    exclude_canceled:Optional[bool]=None
+    exclude_cancelled:Optional[bool]=None
+    exclude_canceleed:Optional[bool]=None
+    exclude_cancle:Optional[bool]=None
+    exclude_cancel:Optional[bool]=None
+    exclude_out_for_delivery:Optional[bool]=None
+    exclude_out_for_deleivery:Optional[bool]=None
+    exclude_delivered:Optional[bool]=None
+    exclude_delevered:Optional[bool]=None
+    online_delivered_only:Optional[bool]=None
 
 
 class GetOrderByIdSchema(BaseModel):

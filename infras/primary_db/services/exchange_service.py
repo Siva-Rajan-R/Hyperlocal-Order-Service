@@ -276,6 +276,7 @@ class ExchangeService:
                     "entity_name": exchange_entity_name,
                     "type": "INCREMENT",
                     "create_stock_mov_adj": True,
+                    "ui_id": ui_id,
                 })
 
             # ── 4. Fetch replacement items pricing & calculate total ───────────────
@@ -377,6 +378,7 @@ class ExchangeService:
                         "entity_name": exchange_entity_name,   # DECREMENT — stock goes out
                         "type": "DECREMENT",
                         "create_stock_mov_adj": True,
+                        "ui_id": ui_id,
                     })
 
             # ── 5. Calculate diff ─────────────────────────────────────────────────
