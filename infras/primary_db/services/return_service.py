@@ -43,29 +43,19 @@ def resolve_item_gst_rate(
     calculation_infos: Optional[dict] = None,
     read_db_order: Optional[dict] = None
 ) -> float:
-    # 1. Try directly from item_dict['gst']
-    item_gst = item_dict.get('gst')
-    gst_rate = parse_gst_rate(item_gst)
-    if gst_rate > 0:
-        return gst_rate
-
-    # 2. Try from read_db_order items
-    if read_db_order:
-        item_id = item_dict.get('id')
-        for rd_itm in (read_db_order.get('items') or []):
-            if rd_itm.get('id') == item_id:
-                rd_gst = parse_gst_rate(rd_itm.get('gst'))
-                if rd_gst > 0:
-                    return rd_gst
-                break
-
-    # 3. Try from calculation_infos['items']
     calc = calculation_infos or (read_db_order.get('calculation_infos') if read_db_order else {}) or {}
-    product_id = item_dict.get('product_id')
-    variant_id = item_dict.get('variant_id')
-
     include_gst = calc.get('include_gst')
     gst_amount = float(calc.get('gst_amount') or 0.0)
+
+    # If the original order did NOT include GST (shop not registered for GST or non-GST order), GST rate is 0.0
+    if include_gst is False and gst_amount <= 0:
+        return 0.0
+    if include_gst is not True and gst_amount <= 0:
+        return 0.0
+
+    # 1. Try from calculation_infos['items']
+    product_id = item_dict.get('product_id')
+    variant_id = item_dict.get('variant_id')
 
     for ci in (calc.get('items') or []):
         if not isinstance(ci, dict):
@@ -76,9 +66,23 @@ def resolve_item_gst_rate(
                     continue
             ci_gst = parse_gst_rate(ci.get('gst'))
             if ci_gst > 0:
-                if include_gst is False and gst_amount <= 0:
-                    return 0.0
                 return ci_gst
+
+    # 2. Try directly from item_dict['gst']
+    item_gst = item_dict.get('gst')
+    gst_rate = parse_gst_rate(item_gst)
+    if gst_rate > 0:
+        return gst_rate
+
+    # 3. Try from read_db_order items
+    if read_db_order:
+        item_id = item_dict.get('id')
+        for rd_itm in (read_db_order.get('items') or []):
+            if rd_itm.get('id') == item_id:
+                rd_gst = parse_gst_rate(rd_itm.get('gst'))
+                if rd_gst > 0:
+                    return rd_gst
+                break
 
     # 4. Try from overall order calculation_infos (gst_amount / subtotal)
     subtotal = float(calc.get('subtotal') or 0.0)
@@ -92,7 +96,7 @@ class ReturnService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def process_return(self, data: CreateReturnSchema, executing_user_id: Optional[str] = None) -> bool | None:
+    async def process_return(self, data: CreateReturnSchema, executing_user_id: Optional[str] = None, custom_user_info: Optional[dict] = None) -> bool | None:
         try:
             rabbitmq_connection=RabbitMQMessagingConfig()
             return_id = generate_uuid()
@@ -104,7 +108,7 @@ class ReturnService:
                 raise HTTPException(status_code=404, detail="Order not found")
             
             ui_id_res = await get_ui_id(shop_id=order_data.get('shop_id'))
-            ui_id=f"{ui_id_res.get("prefix")}-{ui_id_res.get("current_number")}"
+            ui_id=f"{ui_id_res.get('prefix')}-{ui_id_res.get('current_number')}"
 
             order_id=order_data['id']
             additional_infos=order_data['additional_infos']
@@ -132,6 +136,45 @@ class ReturnService:
                             if field in rd_itm and rd_itm[field] is not None:
                                 if field != "gst" or (not items_map[rd_id].get("gst") or items_map[rd_id].get("gst") == "0%"):
                                     items_map[rd_id][field] = rd_itm[field]
+
+            # ── User Context Resolution ──────────────────────────────────────────
+            u_ctx = custom_user_info or current_user_ctx.get() or {}
+            if not isinstance(u_ctx, dict):
+                u_ctx = {}
+            u_name = u_ctx.get("name") or u_ctx.get("user_name") or ""
+            u_email = u_ctx.get("email") or u_ctx.get("user_email") or ""
+            u_id = u_ctx.get("user_id") or u_ctx.get("id") or executing_user_id
+            u_role = u_ctx.get("role") or u_ctx.get("user_role") or "User"
+
+            if (not u_name and not u_email):
+                orig_user = (read_db_order.get("user_infos") or read_db_order.get("user_info") if read_db_order else None) or order_data.get("user_infos") or order_data.get("user_info") or {}
+                if isinstance(orig_user, dict) and (orig_user.get("name") or orig_user.get("user_name") or orig_user.get("email") or orig_user.get("user_email")):
+                    u_name = orig_user.get("name") or orig_user.get("user_name") or ""
+                    u_email = orig_user.get("email") or orig_user.get("user_email") or ""
+                    u_id = u_id or orig_user.get("user_id") or orig_user.get("id")
+                    u_role = orig_user.get("role") or orig_user.get("user_role") or u_role
+                elif read_db_order and read_db_order.get("added_by") and read_db_order.get("added_by") != "System":
+                    u_name = read_db_order.get("added_by")
+
+            added_by_str = u_name or u_email or "System"
+            if u_name and u_email and f"- {u_email}" not in added_by_str:
+                added_by_str = f"{u_name} - {u_email}"
+            elif u_email and not u_name:
+                added_by_str = u_email
+            elif u_name:
+                added_by_str = u_name
+
+            resolved_user_ctx = {
+                "user_id": u_id,
+                "id": u_id,
+                "name": u_name,
+                "user_name": u_name,
+                "email": u_email,
+                "user_email": u_email,
+                "role": u_role,
+                "user_role": u_role
+            }
+            current_user_ctx.set(resolved_user_ctx)
             return_toadd=None
             return_items_toadd=[]
             products_toupdate=[]
@@ -287,16 +330,9 @@ class ReturnService:
                     if matched_sn:
                         founded_serialno.append(matched_sn)
 
-                
-                u_ctx = current_user_ctx.get() or {}
-                u_name = u_ctx.get("name") or u_ctx.get("user_name") or ""
-                u_email = u_ctx.get("email") or ""
-                added_by_str = u_name or u_email or "System"
-                if u_name and u_email and f"- {u_email}" not in added_by_str:
-                    added_by_str = f"{u_name} - {u_email}"
-
                 is_online_order = str(origin).upper() == "ONLINE"
                 return_entity_name = "ONLINE_SALES_RETURN" if is_online_order else "OFFLINE_SALES_RETURN"
+                order_ui_id = order_data.get('ui_id') or (read_db_order.get('ui_id') if read_db_order else None) or order_data.get('id')
 
                 products_toupdate.append(
                     {
@@ -309,15 +345,19 @@ class ReturnService:
                         "entity_name": return_entity_name,
                         "type": "INCREMENT",
                         "create_stock_mov_adj": True,
-                        "ui_id": ui_id,
+                        "ui_id": order_ui_id or ui_id,
+                        "order_ui_id": order_ui_id,
+                        "sale_ui_id": order_ui_id,
+                        "return_ui_id": ui_id,
+                        "entity_id": order_ui_id or ui_id,
                         "order_id": order_id,
                         "added_by": added_by_str,
-                        "user_id": u_ctx.get("user_id") or u_ctx.get("id"),
+                        "user_id": u_id,
                         "user_name": u_name,
                         "user_email": u_email,
-                        "user_role": u_ctx.get("role"),
-                        "user_info": u_ctx,
-                        "user_infos": u_ctx
+                        "user_role": u_role,
+                        "user_info": resolved_user_ctx,
+                        "user_infos": resolved_user_ctx
                     }
                 )
 
@@ -395,12 +435,22 @@ class ReturnService:
             }
 
             saga_data=return_data
-            saga_data["executing_user_id"] = executing_user_id
-            saga_data["user_infos"] = current_user_ctx.get()
-            saga_data["user_info"] = current_user_ctx.get()
+            saga_data["executing_user_id"] = u_id or executing_user_id
+            saga_data["added_by"] = added_by_str
+            saga_data["user_id"] = u_id
+            saga_data["user_name"] = u_name
+            saga_data["user_email"] = u_email
+            saga_data["user_role"] = u_role
+            saga_data["user_infos"] = resolved_user_ctx
+            saga_data["user_info"] = resolved_user_ctx
             if "order_return" in saga_data and isinstance(saga_data["order_return"], dict):
-                saga_data["order_return"]["user_infos"] = current_user_ctx.get()
-                saga_data["order_return"]["user_info"] = current_user_ctx.get()
+                saga_data["order_return"]["added_by"] = added_by_str
+                saga_data["order_return"]["user_id"] = u_id
+                saga_data["order_return"]["user_name"] = u_name
+                saga_data["order_return"]["user_email"] = u_email
+                saga_data["order_return"]["user_role"] = u_role
+                saga_data["order_return"]["user_infos"] = resolved_user_ctx
+                saga_data["order_return"]["user_info"] = resolved_user_ctx
             await SagaProducer.emit(
                 session=self.session,
                 saga_payload=CreateSagaStateSchema(

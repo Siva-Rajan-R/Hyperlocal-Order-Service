@@ -5,13 +5,18 @@ from schemas.v1.request_scheams.order_schema import CreateReturnSchema
 from infras.primary_db.services.return_service import ReturnService
 
 class HandleReturnRequest:
-    def __init__(self, session: AsyncSession, cur_user_id: str, shop_id: str):
+    def __init__(self, session: AsyncSession, cur_user_id: str, shop_id: str, custom_user_info: dict | None = None):
         self.session = session
         self.cur_user_id = cur_user_id
         self.shop_id = shop_id
+        self.custom_user_info = custom_user_info
 
     async def create(self, data: CreateReturnSchema):
-        res = await ReturnService(session=self.session).process_return(data=data, executing_user_id=self.cur_user_id)
+        res = await ReturnService(session=self.session).process_return(
+            data=data,
+            executing_user_id=self.cur_user_id,
+            custom_user_info=self.custom_user_info
+        )
         if not res:
             raise HTTPException(
                 status_code=400,

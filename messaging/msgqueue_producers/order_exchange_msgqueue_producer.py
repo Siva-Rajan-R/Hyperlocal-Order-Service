@@ -113,21 +113,23 @@ class MessagingQueueOrderExchangeProducer:
                     # 3. Create Replacement Order in Read DB
                     rep_read_items = []
                     for rep_itm in replacement_items:
+                        rep_unit_name = rep_itm.get("entered_unit") or rep_itm.get("unit") or (rep_itm.get("unit_infos") or {}).get("name") or ""
                         rep_read_items.append({
                             "id": generate_uuid(),
                             "product_id": rep_itm.get("product_id"),
                             "ui_id": rep_itm.get("ui_id", ""),  # Ensure ui_id is available
-                            "name": rep_itm.get("product_name"),
+                            "name": rep_itm.get("product_name") or rep_itm.get("name"),
                             "category_infos": rep_itm.get("category_infos"),
                             "unit_infos": rep_itm.get("unit_infos"),
+                            "unit": rep_unit_name,
                             "variant_infos": {"variant_id": rep_itm.get("variant_id"), "variant_name": rep_itm.get("variant_name")} if rep_itm.get("variant_id") else None,
                             "batch_infos": {"batch_id": rep_itm.get("batch_id"), "batch_name": rep_itm.get("batch_name")} if rep_itm.get("batch_id") else None,
                             "serialno_infos": rep_itm.get("serialno_infos"),
                             "buy_price": rep_itm.get("buy_price", 0.0),
                             "sell_price": rep_itm.get("sell_price", 0.0),
                             "quantity": rep_itm.get("quantity_in_base"),
-                            "entered_qty": rep_itm.get("quantity"),
-                            "entered_unit": rep_itm.get("unit"),
+                            "entered_qty": rep_itm.get("entered_qty") if rep_itm.get("entered_qty") is not None else rep_itm.get("quantity"),
+                            "entered_unit": rep_unit_name,
                             "stock_before": rep_itm.get("stocks_before"),
                             "stock_after": rep_itm.get("stocks_before", 0) - rep_itm.get("quantity_in_base", 0),
                             "returned_quantity": 0.0,

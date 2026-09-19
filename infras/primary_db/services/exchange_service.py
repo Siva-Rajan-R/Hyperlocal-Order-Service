@@ -47,29 +47,19 @@ def resolve_item_gst_rate(
     calculation_infos: Optional[dict] = None,
     read_db_order: Optional[dict] = None
 ) -> float:
-    # 1. Try directly from item_dict['gst']
-    item_gst = item_dict.get('gst')
-    gst_rate = parse_gst_rate(item_gst)
-    if gst_rate > 0:
-        return gst_rate
-
-    # 2. Try from read_db_order items
-    if read_db_order:
-        item_id = item_dict.get('id')
-        for rd_itm in (read_db_order.get('items') or []):
-            if rd_itm.get('id') == item_id:
-                rd_gst = parse_gst_rate(rd_itm.get('gst'))
-                if rd_gst > 0:
-                    return rd_gst
-                break
-
-    # 3. Try from calculation_infos['items']
     calc = calculation_infos or (read_db_order.get('calculation_infos') if read_db_order else {}) or {}
-    product_id = item_dict.get('product_id')
-    variant_id = item_dict.get('variant_id')
-
     include_gst = calc.get('include_gst')
     gst_amount = float(calc.get('gst_amount') or 0.0)
+
+    # If the original order did NOT include GST (shop not registered for GST or non-GST order), GST rate is 0.0
+    if include_gst is False and gst_amount <= 0:
+        return 0.0
+    if include_gst is not True and gst_amount <= 0:
+        return 0.0
+
+    # 1. Try from calculation_infos['items']
+    product_id = item_dict.get('product_id')
+    variant_id = item_dict.get('variant_id')
 
     for ci in (calc.get('items') or []):
         if not isinstance(ci, dict):
@@ -80,9 +70,23 @@ def resolve_item_gst_rate(
                     continue
             ci_gst = parse_gst_rate(ci.get('gst'))
             if ci_gst > 0:
-                if include_gst is False and gst_amount <= 0:
-                    return 0.0
                 return ci_gst
+
+    # 2. Try directly from item_dict['gst']
+    item_gst = item_dict.get('gst')
+    gst_rate = parse_gst_rate(item_gst)
+    if gst_rate > 0:
+        return gst_rate
+
+    # 3. Try from read_db_order items
+    if read_db_order:
+        item_id = item_dict.get('id')
+        for rd_itm in (read_db_order.get('items') or []):
+            if rd_itm.get('id') == item_id:
+                rd_gst = parse_gst_rate(rd_itm.get('gst'))
+                if rd_gst > 0:
+                    return rd_gst
+                break
 
     # 4. Try from overall order calculation_infos (gst_amount / subtotal)
     subtotal = float(calc.get('subtotal') or 0.0)
@@ -96,7 +100,7 @@ class ExchangeService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def process_exchange(self, data: CreateExchangeSchema, executing_user_id: Optional[str] = None) -> bool | None:
+    async def process_exchange(self, data: CreateExchangeSchema, executing_user_id: Optional[str] = None, custom_user_info: Optional[dict] = None) -> bool | None:
         try:
             rabbitmq_connection = RabbitMQMessagingConfig()
             exchange_id = generate_uuid()
@@ -124,6 +128,45 @@ class ExchangeService:
                                 if field != "gst" or (not items_map[rd_id].get("gst") or items_map[rd_id].get("gst") == "0%"):
                                     items_map[rd_id][field] = rd_itm[field]
 
+            # ── User Context Resolution ──────────────────────────────────────────
+            u_ctx = custom_user_info or current_user_ctx.get() or {}
+            if not isinstance(u_ctx, dict):
+                u_ctx = {}
+            u_name = u_ctx.get("name") or u_ctx.get("user_name") or ""
+            u_email = u_ctx.get("email") or u_ctx.get("user_email") or ""
+            u_id = u_ctx.get("user_id") or u_ctx.get("id") or executing_user_id
+            u_role = u_ctx.get("role") or u_ctx.get("user_role") or "User"
+
+            if (not u_name and not u_email):
+                orig_user = (read_db_order.get("user_infos") or read_db_order.get("user_info") if read_db_order else None) or order_data.get("user_infos") or order_data.get("user_info") or {}
+                if isinstance(orig_user, dict) and (orig_user.get("name") or orig_user.get("user_name") or orig_user.get("email") or orig_user.get("user_email")):
+                    u_name = orig_user.get("name") or orig_user.get("user_name") or ""
+                    u_email = orig_user.get("email") or orig_user.get("user_email") or ""
+                    u_id = u_id or orig_user.get("user_id") or orig_user.get("id")
+                    u_role = orig_user.get("role") or orig_user.get("user_role") or u_role
+                elif read_db_order and read_db_order.get("added_by") and read_db_order.get("added_by") != "System":
+                    u_name = read_db_order.get("added_by")
+
+            added_by_str = u_name or u_email or "System"
+            if u_name and u_email and f"- {u_email}" not in added_by_str:
+                added_by_str = f"{u_name} - {u_email}"
+            elif u_email and not u_name:
+                added_by_str = u_email
+            elif u_name:
+                added_by_str = u_name
+
+            resolved_user_ctx = {
+                "user_id": u_id,
+                "id": u_id,
+                "name": u_name,
+                "user_name": u_name,
+                "email": u_email,
+                "user_email": u_email,
+                "role": u_role,
+                "user_role": u_role
+            }
+            current_user_ctx.set(resolved_user_ctx)
+
             # ── 2. Get UI ID for this exchange and replacement order ──────────────
             ui_id_res = await get_ui_id(shop_id=data.shop_id)
             ui_id = f"{ui_id_res.get('prefix')}-{ui_id_res.get('current_number')}"
@@ -131,7 +174,6 @@ class ExchangeService:
             # Create a separate UI ID for the replacement order
             rep_ui_id_res = await get_ui_id(shop_id=data.shop_id)
             replacement_ui_id = f"{rep_ui_id_res.get('prefix')}-{rep_ui_id_res.get('current_number')}"
-
 
             order_id = order_data["id"]
             shop_id = data.shop_id
@@ -265,6 +307,8 @@ class ExchangeService:
 
                 is_online_order = str(order_data.get("origin", "")).upper() == "ONLINE"
                 exchange_entity_name = "ONLINE_SALES_EXCHANGE" if is_online_order else "OFFLINE_SALES_EXCHANGE"
+                replacement_entity_name = "ONLINE_EXCHANGE" if is_online_order else "OFFLINE_EXCHANGE"
+                order_ui_id = order_data.get("ui_id") or (read_db_order.get("ui_id") if read_db_order else None) or order_data.get("id")
 
                 products_toupdate.append({
                     "shop_id": shop_id,
@@ -276,7 +320,19 @@ class ExchangeService:
                     "entity_name": exchange_entity_name,
                     "type": "INCREMENT",
                     "create_stock_mov_adj": True,
-                    "ui_id": ui_id,
+                    "ui_id": order_ui_id or ui_id,
+                    "order_ui_id": order_ui_id,
+                    "sale_ui_id": order_ui_id,
+                    "exchange_ui_id": ui_id,
+                    "entity_id": order_ui_id or ui_id,
+                    "order_id": order_id,
+                    "added_by": added_by_str,
+                    "user_id": u_id,
+                    "user_name": u_name,
+                    "user_email": u_email,
+                    "user_role": u_role,
+                    "user_info": resolved_user_ctx,
+                    "user_infos": resolved_user_ctx,
                 })
 
             # ── 4. Fetch replacement items pricing & calculate total ───────────────
@@ -357,6 +413,13 @@ class ExchangeService:
                     rep_dump["sell_price"] = pricing.get("sell_price", 0.0)
                     rep_dump["gst"] = gst
                     rep_dump["product_name"] = prod_data.get("name", "Unknown")
+                    rep_dump["name"] = prod_data.get("name", "Unknown")
+                    rep_dump["ui_id"] = prod_data.get("ui_id") or ""
+                    rep_dump["unit_infos"] = rep_unit_infos
+                    rep_dump["unit"] = rep_entered_unit or rep_base_unit
+                    rep_dump["entered_unit"] = rep_entered_unit or rep_base_unit
+                    rep_dump["entered_qty"] = rep_item.quantity
+                    rep_dump["category_infos"] = prod_data.get("category_infos")
                     rep_dump["variant_name"] = (matched_variant or {}).get("name") if matched_variant else None
                     rep_dump["batch_name"] = (matched_batch or {}).get("name") if matched_batch else None
                     stock_source = matched_batch or matched_variant or prod_data
@@ -364,8 +427,11 @@ class ExchangeService:
                     rep_dump["quantity_in_base"] = rep_qty_in_base
                     enriched_replacement_items.append(rep_dump)
 
+                    is_order_gst = calculation_infos.get('include_gst') is True or float(calculation_infos.get('gst_amount') or 0.0) > 0
+                    rep_gst_rate = parse_gst_rate(gst) if is_order_gst else 0.0
+                    rep_unit_sell_price_with_gst = rep_dump["sell_price"] * (1.0 + rep_gst_rate) if is_order_gst else rep_dump["sell_price"]
                     total_replacement_qty += rep_qty_in_base
-                    total_replacement_amount += rep_dump["sell_price"] * rep_qty_in_base
+                    total_replacement_amount += rep_unit_sell_price_with_gst * rep_qty_in_base
 
                     # ── DECREMENT stock for replacement item (customer takes it) ──
                     products_toupdate.append({
@@ -375,10 +441,23 @@ class ExchangeService:
                         "batch_infos": {"id": rep_item.batch_id} if rep_item.batch_id else None,
                         "serialno_infos": replacement_serialno,
                         "stocks": rep_qty_in_base,
-                        "entity_name": exchange_entity_name,   # DECREMENT — stock goes out
+                        "entity_name": replacement_entity_name,   # DECREMENT — stock goes out
                         "type": "DECREMENT",
                         "create_stock_mov_adj": True,
-                        "ui_id": ui_id,
+                        "ui_id": order_ui_id,
+                        "order_ui_id": order_ui_id,
+                        "sale_ui_id": order_ui_id,
+                        "exchange_ui_id": ui_id,
+                        "replacement_ui_id": replacement_ui_id,
+                        "entity_id": order_ui_id,
+                        "order_id": order_id,
+                        "added_by": added_by_str,
+                        "user_id": u_id,
+                        "user_name": u_name,
+                        "user_email": u_email,
+                        "user_role": u_role,
+                        "user_info": resolved_user_ctx,
+                        "user_infos": resolved_user_ctx,
                     })
 
             # ── 5. Calculate diff ─────────────────────────────────────────────────
@@ -485,12 +564,22 @@ class ExchangeService:
                     "payment_status": payment_status,
                     "replacement_ui_id": replacement_ui_id,
                     "original_order": order_data,
-                    "user_infos": current_user_ctx.get(),
-                    "user_info": current_user_ctx.get()
+                    "added_by": added_by_str,
+                    "user_id": u_id,
+                    "user_name": u_name,
+                    "user_email": u_email,
+                    "user_role": u_role,
+                    "user_infos": resolved_user_ctx,
+                    "user_info": resolved_user_ctx
                 },
-                "executing_user_id": executing_user_id,
-                "user_infos": current_user_ctx.get(),
-                "user_info": current_user_ctx.get()
+                "executing_user_id": u_id or executing_user_id,
+                "added_by": added_by_str,
+                "user_id": u_id,
+                "user_name": u_name,
+                "user_email": u_email,
+                "user_role": u_role,
+                "user_infos": resolved_user_ctx,
+                "user_info": resolved_user_ctx
             }
 
             saga_id = generate_uuid()
