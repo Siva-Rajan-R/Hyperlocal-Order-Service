@@ -21,7 +21,7 @@ async def order_service_lifespan(app:FastAPI):
         await init_infra_db()
         await init_orders_pg_db()
         await check_redis_health()
-        print("[ORDER SERVICE] ✅ Database & Redis initialized. Ready for background tasks & exports.")
+        print("[ORDER SERVICE] [OK] Database & Redis initialized. Ready for background tasks & exports.")
         app.state.worker_task = asyncio.create_task(worker())
         yield
 

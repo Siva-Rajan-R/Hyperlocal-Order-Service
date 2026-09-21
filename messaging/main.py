@@ -37,14 +37,14 @@ class RabbitMQMessagingConfig:
             durable=True
         )
 
-        ic(f"Exchange created successfully ✅ -> {exchange}")
+        ic(f"Exchange created successfully [OK] -> {exchange}")
         return exchange
     
     async def create_queue(self,routing_key:str,exchange_name:str,queue_name:str):
         ch=await self._get_channel()
         queue=await ch.declare_queue(name=queue_name,durable=True)
         await queue.bind(exchange=exchange_name,routing_key=routing_key)
-        ic(f"Queue created successfully ✅ -> {queue}")
+        ic(f"Queue created successfully [OK] -> {queue}")
         return queue
     
     async def publish_event(self,routing_key:str,payload:dict,headers:dict,exchange_name:str):
@@ -65,7 +65,7 @@ class RabbitMQMessagingConfig:
             message=message,
             routing_key=routing_key
         )
-        ic(f"Event published successfully ✅ => {routing_key}, {exchange_name}")
+        ic(f"Event published successfully [OK] => {routing_key}, {exchange_name}")
         return True
 
 

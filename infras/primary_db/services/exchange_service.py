@@ -461,8 +461,8 @@ class ExchangeService:
                     })
 
             # ── 5. Calculate diff ─────────────────────────────────────────────────
-            # diff > 0 → replacement costs MORE → customer pays extra
-            # diff < 0 → exchanged item costs MORE → shopkeeper gives back / clears outstanding
+            # diff > 0 -> replacement costs MORE -> customer pays extra
+            # diff < 0 -> exchanged item costs MORE -> shopkeeper gives back / clears outstanding
             amount_diff = total_replacement_amount - total_exchanged_amount
 
             # ── 6. Process payments: validate ON_CREDIT scenarios ─────────────────
@@ -488,8 +488,8 @@ class ExchangeService:
                     )
 
                 if amount_diff > 0:
-                    # Replacement costs MORE → customer owes more → ADD to customer outstanding
-                    # ON_CREDIT means: "I'll pay later" → add outstanding
+                    # Replacement costs MORE -> customer owes more -> ADD to customer outstanding
+                    # ON_CREDIT means: "I'll pay later" -> add outstanding
                     customer_outst_payload = {
                         "customer_id": customer_id,
                         "shop_id": shop_id,
@@ -497,7 +497,7 @@ class ExchangeService:
                         "action": "ADD"
                     }
                 else:
-                    # Replacement costs LESS → shopkeeper owes → clear customer's outstanding
+                    # Replacement costs LESS -> shopkeeper owes -> clear customer's outstanding
                     # ON_CREDIT means: "deduct from my outstanding"
                     customer_infos = await get_customer_info(shop_id=shop_id, customer_id=customer_id)
                     if not customer_infos:
