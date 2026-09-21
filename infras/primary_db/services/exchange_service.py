@@ -306,8 +306,8 @@ class ExchangeService:
                 })
 
                 is_online_order = str(order_data.get("origin", "")).upper() == "ONLINE"
-                exchange_entity_name = "ONLINE_SALES_EXCHANGE" if is_online_order else "OFFLINE_SALES_EXCHANGE"
-                replacement_entity_name = "ONLINE_EXCHANGE" if is_online_order else "OFFLINE_EXCHANGE"
+                exchange_entity_name = "ONLINE_SALES_RETURN" if is_online_order else "OFFLINE_SALES_RETURN"
+                replacement_entity_name = "ONLINE_SALES" if is_online_order else "OFFLINE_SALES"
                 order_ui_id = order_data.get("ui_id") or (read_db_order.get("ui_id") if read_db_order else None) or order_data.get("id")
 
                 products_toupdate.append({
@@ -333,6 +333,7 @@ class ExchangeService:
                     "user_role": u_role,
                     "user_info": resolved_user_ctx,
                     "user_infos": resolved_user_ctx,
+                    "description": f"Stock increase via exchange [ {order_ui_id or ui_id} ]"
                 })
 
             # ── 4. Fetch replacement items pricing & calculate total ───────────────
@@ -458,6 +459,7 @@ class ExchangeService:
                         "user_role": u_role,
                         "user_info": resolved_user_ctx,
                         "user_infos": resolved_user_ctx,
+                        "description": f"Stock decrease via exchange [ {order_ui_id or ui_id} ]"
                     })
 
             # ── 5. Calculate diff ─────────────────────────────────────────────────

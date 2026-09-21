@@ -156,8 +156,24 @@ class HandleOrderRequest:
         return order_data
 
     async def get(self,data:GetAllOrderSchema):
+        data.online_delivered_only = True
         res=await OrderReadDbRepo.get(data)
         ic(res)
+
+        if isinstance(res, dict) and "datas" in res:
+            for order in res["datas"]:
+                origin = str(order.get("origin", "")).upper()
+                if origin == "ONLINE" or order.get("online_details"):
+                    status = str(order.get("status", "")).upper()
+                    if status == "DELIVERED":
+                        order["status"] = "COMPLETED"
+        elif isinstance(res, list):
+            for order in res:
+                origin = str(order.get("origin", "")).upper()
+                if origin == "ONLINE" or order.get("online_details"):
+                    status = str(order.get("status", "")).upper()
+                    if status == "DELIVERED":
+                        order["status"] = "COMPLETED"
 
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
@@ -169,7 +185,24 @@ class HandleOrderRequest:
         )
     
     async def getby_shop_id(self, data: GetOrderByShopIdSchema):
+        data.online_delivered_only = True
         res = await OrderReadDbRepo.get_by_shop_id_filtered(data=data)
+        
+        if isinstance(res, dict) and "datas" in res:
+            for order in res["datas"]:
+                origin = str(order.get("origin", "")).upper()
+                if origin == "ONLINE" or order.get("online_details"):
+                    status = str(order.get("status", "")).upper()
+                    if status == "DELIVERED":
+                        order["status"] = "COMPLETED"
+        elif isinstance(res, list):
+            for order in res:
+                origin = str(order.get("origin", "")).upper()
+                if origin == "ONLINE" or order.get("online_details"):
+                    status = str(order.get("status", "")).upper()
+                    if status == "DELIVERED":
+                        order["status"] = "COMPLETED"
+
         return SuccessResponseTypDict(
             detail=BaseResponseTypDict(
                 status_code=200,
