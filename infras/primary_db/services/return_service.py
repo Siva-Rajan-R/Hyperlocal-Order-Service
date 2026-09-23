@@ -480,23 +480,33 @@ class ReturnService:
 
 
             if customer_outst_toadd:
+                order_disp_id = str((read_db_order.get("ui_id") or read_db_order.get("invoice_no") or order_id) if read_db_order else order_id)
+                amt = float(customer_outst_toadd['amount'])
+                clear_payload = {
+                    "id": customer_id,
+                    "customer_id": customer_id,
+                    "shop_id": shop_id,
+                    "payment_infos": [{"method": "ON_CREDIT", "amount": amt}],
+                    "entity_name": "sales_return",
+                    "entity_id": order_disp_id,
+                    "invoice_no": order_disp_id,
+                    "notes": f"Sales return for order {order_disp_id}. Cleared outstanding: ₹{amt:.2f}",
+                    "cleared_amount": amt,
+                    "total_amount": amt
+                }
                 await rabbitmq_connection.publish_event(
                     routing_key="customers.service.routing.key",
                     exchange_name="customers.service.exchange",
-                    payload=customer_outst_toadd,
+                    payload=clear_payload,
                     headers={
-                        "saga_id":generate_uuid(),
-                        "reply_entity_name":"None",
-                        "reply_exchange":"None",
-                        "reply_key":"None",
-                        "service_name":"CUSTOMERS",
-                        "entity_name":"clear_customer_outstanding",
-                        "service":"CUSTOMERS",
-                        "body":{
-                            "customer_id":customer_outst_toadd['customer_id'],
-                            "shop_id":customer_outst_toadd['shop_id'],
-                            "payment_infos":[{"method":'CASH',"amount":customer_outst_toadd['amount']}]
-                        }
+                        "saga_id": "none",
+                        "reply_entity_name": "none",
+                        "reply_exchange": "none",
+                        "reply_key": "none",
+                        "service_name": "CUSTOMERS",
+                        "entity_name": "clear_customer_outstanding",
+                        "service": "CUSTOMERS",
+                        "body": clear_payload
                     }
                 )
 

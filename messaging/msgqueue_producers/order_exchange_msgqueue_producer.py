@@ -246,31 +246,62 @@ class MessagingQueueOrderExchangeProducer:
 
                     # ── Publish customer outstanding event ───────────────────────
                     if customer_outst_payload:
+                        orig_order_ui_id = str((existing_order.get("ui_id") or existing_order.get("invoice_no") or order_id) if existing_order else order_id)
+                        exchange_display_id = str(ui_id or exchange_id)
                         action = customer_outst_payload.get("action", "ADD")
-                        entity_name = "clear_customer_outstanding" if action == "CLEAR" else "add_customer_outstanding"
+                        amt = float(customer_outst_payload.get("amount", 0.0))
+
+                        if action == "CLEAR":
+                            entity_name = "clear_customer_outstanding"
+                            body_data = {
+                                "id": customer_outst_payload.get("customer_id"),
+                                "customer_id": customer_outst_payload.get("customer_id"),
+                                "shop_id": customer_outst_payload.get("shop_id"),
+                                "payment_infos": [
+                                    {"method": "ON_CREDIT", "amount": amt}
+                                ],
+                                "entity_name": "exchange",
+                                "entity_id": orig_order_ui_id,
+                                "invoice_no": orig_order_ui_id,
+                                "notes": f"Exchange for order {orig_order_ui_id}. Cleared outstanding: ₹{amt:.2f}",
+                                "cleared_amount": amt,
+                                "total_amount": amt
+                            }
+                        else:
+                            entity_name = "add_customer_outstanding"
+                            body_data = {
+                                "id": customer_outst_payload.get("customer_id"),
+                                "customer_id": customer_outst_payload.get("customer_id"),
+                                "shop_id": customer_outst_payload.get("shop_id"),
+                                "outstanding_infos": {"amount": amt},
+                                "type": "INCREMENT",
+                                "payment_infos": [
+                                    {"method": "ON_CREDIT", "amount": amt}
+                                ],
+                                "entity_name": "exchange",
+                                "entity_id": orig_order_ui_id,
+                                "invoice_no": orig_order_ui_id,
+                                "notes": f"Exchange for order {orig_order_ui_id}. Added to credit: ₹{amt:.2f}",
+                                "cleared_amount": 0.0,
+                                "total_amount": amt
+                            }
 
                         await rabbitmq_msg_obj.publish_event(
                             routing_key="customers.service.routing.key",
                             exchange_name="customers.service.exchange",
-                            payload=customer_outst_payload,
+                            payload=body_data,
                             headers={
-                                "saga_id": generate_uuid(),
-                                "reply_entity_name": "None",
-                                "reply_exchange": "None",
-                                "reply_key": "None",
+                                "saga_id": "none",
+                                "reply_entity_name": "none",
+                                "reply_exchange": "none",
+                                "reply_key": "none",
                                 "service_name": "CUSTOMERS",
                                 "entity_name": entity_name,
                                 "service": "CUSTOMERS",
-                                "body": {
-                                    "customer_id": customer_outst_payload.get("customer_id"),
-                                    "shop_id": customer_outst_payload.get("shop_id"),
-                                    "payment_infos": [
-                                        {"method": "EXCHANGE", "amount": customer_outst_payload.get("amount")}
-                                    ]
-                                }
+                                "body": body_data
                             }
                         )
-                        ic(f"Published customer outstanding event: {action} {customer_outst_payload.get('amount')}")
+                        ic(f"Published customer outstanding event: {action} {amt} for exchange {exchange_display_id}")
 
                     # ── Activity log ─────────────────────────────────────────────
                     try:

@@ -425,14 +425,25 @@ class MessagingQueueOrderProducer:
                     pay_infos_list = []
                     if isinstance(payment_infos, dict):
                         for m, amt in payment_infos.items():
-                            if m != "ON_CREDIT" and amt > 0:
+                            if amt > 0:
                                 pay_infos_list.append({
                                     "mode": m,
+                                    "method": m,
                                     "amount": float(amt),
-                                    "notes": f"Initial payment for order {ui_id}"
+                                    "notes": f"Payment for order {ui_id}"
                                 })
 
+                    is_credit_billed = bool((on_credit_amt > 0 and non_credit_paid == 0) or (isinstance(payment_infos, dict) and "ON_CREDIT" in payment_infos and payment_infos.get("ON_CREDIT", 0) > 0 and non_credit_paid == 0))
+                    primary_method = "ON_CREDIT" if is_credit_billed else "CASH"
                     notes_str = f"Initial payment of {non_credit_paid} for order {ui_id}" if non_credit_paid > 0 else f"Order {ui_id} billed (on credit)"
+
+                    if not pay_infos_list and on_credit_amt > 0:
+                        pay_infos_list = [{
+                            "mode": "ON_CREDIT",
+                            "method": "ON_CREDIT",
+                            "amount": float(on_credit_amt),
+                            "notes": f"Billed on credit for order {ui_id}"
+                        }]
 
                     cust_outst_body = {
                         "shop_id": order_payload.get('shop_id'),
@@ -444,6 +455,7 @@ class MessagingQueueOrderProducer:
                         "entity_name": "order",
                         "entity_id": str(ui_id or order_id),
                         "invoice_no": str(ui_id or order_id),
+                        "payment_method": primary_method,
                         "payment_infos": pay_infos_list,
                         "notes": notes_str
                     }
