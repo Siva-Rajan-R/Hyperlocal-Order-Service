@@ -158,7 +158,16 @@ class OrderReadDbRepo:
                 and_clauses.append({
                     "$or": [
                         {"origin": re.compile("^online$", re.IGNORECASE)},
-                        {"online_details": {"$exists": True, "$ne": None}},
+                        {"online_details": {"$exists": True, "$ne": None, "$ne": {}}},
+                    ]
+                })
+            elif origin_val in ("OFFLINE", "POS", "DIRECT"):
+                and_clauses.append({
+                    "origin": {"$nin": ["ONLINE", "online", "Online"]},
+                    "$or": [
+                        {"online_details": {"$exists": False}},
+                        {"online_details": None},
+                        {"online_details": {}}
                     ]
                 })
             else:
@@ -175,14 +184,15 @@ class OrderReadDbRepo:
                 "origin": {"$nin": ["ONLINE", "online", "Online"]},
                 "$or": [
                     {"online_details": {"$exists": False}},
-                    {"online_details": None}
+                    {"online_details": None},
+                    {"online_details": {}}
                 ]
             })
         elif ex_offline:
             and_clauses.append({
                 "$or": [
                     {"origin": re.compile("^online$", re.IGNORECASE)},
-                    {"online_details": {"$exists": True, "$ne": None}},
+                    {"online_details": {"$exists": True, "$ne": None, "$ne": {}}},
                 ]
             })
 
