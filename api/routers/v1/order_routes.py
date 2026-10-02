@@ -18,12 +18,12 @@ SHOP_ID="37d5519b-51a1-5854-982b-4d6524171017"
 
 @router.post('')
 async def create(data:CreateOrderSchema,session:PG_SESSION,user_id: Optional[str] = Depends(get_current_user_id)):
-    return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=user_id or "").create(data=data)
+    return await HandleOrderRequest(session=session,shop_id=getattr(data, "shop_id", SHOP_ID) or SHOP_ID,cur_user_id=user_id or "").create(data=data)
 
 
 @router.put('/status')
 async def update_status(data:UpdateOrderStatusSchema,session:PG_SESSION,user_id: Optional[str] = Depends(get_current_user_id)):
-    return await HandleOrderRequest(session=session,shop_id=SHOP_ID,cur_user_id=user_id or "").update(data=data)
+    return await HandleOrderRequest(session=session,shop_id=getattr(data, "shop_id", SHOP_ID) or SHOP_ID,cur_user_id=user_id or "").update(data=data)
 
 from schemas.v1.request_scheams.order_schema import VerifyDeliverySchema
 @router.post('/verify-delivery')
