@@ -1,5 +1,5 @@
 fastapi
-sqlalchemy
+sqlalchemy[asyncio]
 icecream
 python-dotenv
 uvicorn
