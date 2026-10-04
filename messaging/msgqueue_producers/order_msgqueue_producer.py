@@ -457,7 +457,8 @@ class MessagingQueueOrderProducer:
                         "invoice_no": str(ui_id or order_id),
                         "payment_method": primary_method,
                         "payment_infos": pay_infos_list,
-                        "notes": notes_str
+                        "notes": notes_str,
+                        "is_initial": True
                     }
 
                     await rabbitmq_msg_obj.publish_event(
