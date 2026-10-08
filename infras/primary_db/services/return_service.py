@@ -89,7 +89,57 @@ def resolve_item_gst_rate(
     if gst_amount > 0 and subtotal > 0:
         return gst_amount / subtotal
 
-    return 0.0
+def resolve_item_unit_price(
+    item_dict: dict,
+    calculation_infos: Optional[dict] = None,
+    read_db_order: Optional[dict] = None
+) -> float:
+    calc = calculation_infos or (read_db_order.get('calculation_infos') if read_db_order else {}) or {}
+    product_id = item_dict.get('product_id')
+    variant_id = item_dict.get('variant_id')
+    item_id = item_dict.get('id')
+
+    # 1. Search in calculation_infos['items']
+    for ci in (calc.get('items') or []):
+        if not isinstance(ci, dict):
+            continue
+        if ci.get('product_id') == product_id or ci.get('order_item_id') == item_id or ci.get('id') == item_id:
+            if variant_id and ci.get('variant_id') and ci.get('variant_id') != variant_id:
+                continue
+            qty = float(ci.get('qty') or item_dict.get('quantity') or 1.0)
+            if ci.get('final_inclusive') is not None and qty > 0:
+                return float(ci['final_inclusive']) / qty
+            elif ci.get('price') is not None:
+                orig_sp = float(ci['price'])
+                disc = float(ci.get('product_discount_amount') or 0.0) + float(ci.get('line_discount_amount') or 0.0) + float(ci.get('bill_discount_share') or 0.0)
+                if qty > 0:
+                    return max(0.0, (orig_sp * qty - disc) / qty)
+
+    # 2. Check total_amount from item_dict
+    total_amt = item_dict.get('total_amount')
+    qty = float(item_dict.get('quantity') or 1.0)
+    if total_amt is not None and float(total_amt) > 0 and qty > 0:
+        return float(total_amt) / qty
+
+    # 3. Check read_db_order items
+    if read_db_order:
+        for rd_itm in (read_db_order.get('items') or []):
+            if rd_itm.get('id') == item_id or rd_itm.get('product_id') == product_id:
+                rd_total = rd_itm.get('total_amount')
+                rd_qty = float(rd_itm.get('quantity') or 1.0)
+                if rd_total is not None and float(rd_total) > 0 and rd_qty > 0:
+                    return float(rd_total) / rd_qty
+
+    # 4. Fallback from sell_price
+    raw_sp = float(item_dict.get('sell_price') or 0.0)
+    include_gst = calc.get('include_gst')
+    gst_type = calc.get('gst_type')
+    # If explicitly exclusive GST order, add GST rate
+    if include_gst is True and gst_type == 'EXCLUSIVE':
+        gst_rate = resolve_item_gst_rate(item_dict, calculation_infos, read_db_order)
+        return raw_sp * (1.0 + gst_rate)
+
+    return raw_sp
 
 
 class ReturnService:
@@ -236,17 +286,12 @@ class ReturnService:
                         detail=f"Return qty ({inc_quantity}) exceeds available qty. Original: {original_qty}, already returned: {returned_qty}, already exchanged: {exchanged_qty}, available: {original_qty - already_consumed}"
                     )
                 
-                raw_sell_price = float(items_map[inc_item_id]['sell_price'] or 0.0)
-                gst_rate = resolve_item_gst_rate(
+                unit_price_inclusive = resolve_item_unit_price(
                     item_dict=items_map[inc_item_id],
                     calculation_infos=calculation_infos,
                     read_db_order=read_db_order
                 )
-                
-                # OrderItems.sell_price is stored as net/raw amount (excl GST).
-                # Customer paid inclusive of GST = raw_sell_price * (1 + gst_rate).
-                full_sell_price_with_gst = round(raw_sell_price * (1.0 + gst_rate), 2)
-                total_return_qty_amount = round(inc_quantity * full_sell_price_with_gst, 2)
+                total_return_qty_amount = round(inc_quantity * unit_price_inclusive, 2)
                 total_refund_amount = round(total_refund_amount + total_return_qty_amount, 2)
                 total_refund_qty += inc_quantity
 
@@ -283,14 +328,12 @@ class ReturnService:
                         if matched_sub:
                             conversion_factor = float(matched_sub.get("factor", 1.0))
                 inc_quantity = itm["quantity"] * conversion_factor
-                raw_sell_price = float(items_map[inc_item_id]['sell_price'] or 0.0)
-                gst_rate = resolve_item_gst_rate(
+                unit_price_inclusive = resolve_item_unit_price(
                     item_dict=items_map[inc_item_id],
                     calculation_infos=calculation_infos,
                     read_db_order=read_db_order
                 )
-                full_sell_price_with_gst = round(raw_sell_price * (1.0 + gst_rate), 2)
-                total_return_qty_amount = round(inc_quantity * full_sell_price_with_gst, 2)
+                total_return_qty_amount = round(inc_quantity * unit_price_inclusive, 2)
                 founded_serialno=[]
                 existing_serial_ids = [s.get('id') for s in (items_map[inc_item_id].get('serialno_infos') or [])]
                 

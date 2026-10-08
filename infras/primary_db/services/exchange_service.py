@@ -96,6 +96,56 @@ def resolve_item_gst_rate(
     return 0.0
 
 
+def resolve_item_unit_price(
+    item_dict: dict,
+    calculation_infos: Optional[dict] = None,
+    read_db_order: Optional[dict] = None
+) -> float:
+    calc = calculation_infos or (read_db_order.get('calculation_infos') if read_db_order else {}) or {}
+    product_id = item_dict.get('product_id')
+    variant_id = item_dict.get('variant_id')
+    item_id = item_dict.get('id') or item_dict.get('order_item_id')
+
+    # 1. Search in calculation_infos['items']
+    for ci in (calc.get('items') or []):
+        if not isinstance(ci, dict):
+            continue
+        if ci.get('product_id') == product_id or ci.get('order_item_id') == item_id or ci.get('id') == item_id:
+            if variant_id and ci.get('variant_id') and ci.get('variant_id') != variant_id:
+                continue
+            qty = float(ci.get('qty') or item_dict.get('quantity') or 1.0)
+            if ci.get('final_inclusive') is not None and qty > 0:
+                return float(ci['final_inclusive']) / qty
+            elif ci.get('price') is not None:
+                orig_sp = float(ci['price'])
+                disc = float(ci.get('product_discount_amount') or 0.0) + float(ci.get('line_discount_amount') or 0.0) + float(ci.get('bill_discount_share') or 0.0)
+                if qty > 0:
+                    return max(0.0, (orig_sp * qty - disc) / qty)
+
+    # 2. Check total_amount from item_dict
+    total_amt = item_dict.get('total_amount')
+    qty = float(item_dict.get('quantity') or 1.0)
+    if total_amt is not None and float(total_amt) > 0 and qty > 0:
+        return float(total_amt) / qty
+
+    # 3. Check read_db_order items
+    if read_db_order:
+        for rd_itm in (read_db_order.get('items') or []):
+            if rd_itm.get('id') == item_id or rd_itm.get('product_id') == product_id:
+                rd_total = rd_itm.get('total_amount')
+                rd_qty = float(rd_itm.get('quantity') or 1.0)
+                if rd_total is not None and float(rd_total) > 0 and rd_qty > 0:
+                    return float(rd_total) / rd_qty
+
+    # 4. Fallback from sell_price
+    raw_sp = float(item_dict.get('sell_price') or 0.0)
+    gst_rate = resolve_item_gst_rate(item_dict, calculation_infos, read_db_order)
+    if gst_rate > 0:
+        return raw_sp * (1.0 + gst_rate)
+
+    return raw_sp
+
+
 class ExchangeService:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -242,14 +292,12 @@ class ExchangeService:
                                f"Original: {original_qty}, already returned: {returned_qty}, already exchanged: {exchanged_qty}"
                     )
 
-                raw_sell_price = float(orig.get("sell_price", 0.0) or 0.0)
-                gst_rate = resolve_item_gst_rate(
+                unit_price_inclusive = resolve_item_unit_price(
                     item_dict=orig,
                     calculation_infos=calculation_infos,
                     read_db_order=read_db_order
                 )
-                full_sell_price_with_gst = round(raw_sell_price * (1.0 + gst_rate), 2)
-                item_exchange_amount = round(qty_in_base * full_sell_price_with_gst, 2)
+                item_exchange_amount = round(qty_in_base * unit_price_inclusive, 2)
                 total_exchanged_qty += qty_in_base
                 total_exchanged_amount = round(total_exchanged_amount + item_exchange_amount, 2)
 
