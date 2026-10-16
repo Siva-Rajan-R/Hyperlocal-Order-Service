@@ -13,10 +13,11 @@ async def get_current_user_info(
     """
     Dependency to extract complete user context dictionary from gateway header, JWT token, or request context.
     """
-    # 1. Try x-user-infos header
-    if x_user_infos:
+    # 1. Safely extract headers (whether called via Depends or directly with request)
+    raw_x_user = x_user_infos if isinstance(x_user_infos, str) else request.headers.get("x-user-infos")
+    if raw_x_user:
         try:
-            raw_str = urllib.parse.unquote(x_user_infos)
+            raw_str = urllib.parse.unquote(raw_x_user)
             user_info = json.loads(raw_str)
             if isinstance(user_info, dict) and user_info:
                 current_user_ctx.set(user_info)
@@ -25,8 +26,8 @@ async def get_current_user_info(
             pass
 
     # 2. Try Authorization header
-    auth_header = authorization or request.headers.get("Authorization") or request.headers.get("authorization")
-    if auth_header and auth_header.startswith("Bearer "):
+    auth_header = authorization if isinstance(authorization, str) else (request.headers.get("Authorization") or request.headers.get("authorization"))
+    if auth_header and isinstance(auth_header, str) and auth_header.startswith("Bearer "):
         try:
             token_parts = auth_header.split(" ")[1].split(".")
             if len(token_parts) == 3:

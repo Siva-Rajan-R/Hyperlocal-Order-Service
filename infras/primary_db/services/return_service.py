@@ -373,7 +373,7 @@ class ReturnService:
                     if matched_sn:
                         founded_serialno.append(matched_sn)
 
-                is_online_order = str(origin).upper() == "ONLINE"
+                is_online_order = "ONLINE" in str(getattr(origin, "value", origin)).upper() if origin else False
                 return_entity_name = "ONLINE_SALES_RETURN" if is_online_order else "OFFLINE_SALES_RETURN"
                 order_ui_id = order_data.get('ui_id') or (read_db_order.get('ui_id') if read_db_order else None) or order_data.get('id')
 

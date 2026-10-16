@@ -1,5 +1,5 @@
 from ...handlers.ordrer_handler import HandleOrderRequest,CreateOrderSchema,DeleteOrderSchema,GetAllOrderSchema,GetOrderByIdSchema,GetOrderByShopIdSchema,GetOrderByCustomerIdSchema,UpdateOrderStatusSchema,GetBulkOrdersSchema
-from fastapi import APIRouter,Depends,Query
+from fastapi import APIRouter,Depends,Query,Request
 from typing import Annotated,Optional
 from infras.primary_db.main import get_pg_async_session,AsyncSession
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
@@ -11,7 +11,7 @@ router=APIRouter(
 )
 
 
-from core.utils.user_info import get_current_user_id
+from core.utils.user_info import get_current_user_id, get_current_user_info
 
 PG_SESSION=Annotated[AsyncSession,Depends(get_pg_async_session)]
 SHOP_ID="37d5519b-51a1-5854-982b-4d6524171017"
@@ -22,13 +22,15 @@ async def create(data:CreateOrderSchema,session:PG_SESSION,user_id: Optional[str
 
 
 @router.put('/status')
-async def update_status(data:UpdateOrderStatusSchema,session:PG_SESSION,user_id: Optional[str] = Depends(get_current_user_id)):
-    return await HandleOrderRequest(session=session,shop_id=getattr(data, "shop_id", SHOP_ID) or SHOP_ID,cur_user_id=user_id or "").update(data=data)
+async def update_status(data:UpdateOrderStatusSchema,session:PG_SESSION,request: Request,user_id: Optional[str] = Depends(get_current_user_id)):
+    user_info = await get_current_user_info(request=request)
+    return await HandleOrderRequest(session=session,shop_id=getattr(data, "shop_id", SHOP_ID) or SHOP_ID,cur_user_id=user_id or "",cur_user_info=user_info).update(data=data)
 
 from schemas.v1.request_scheams.order_schema import VerifyDeliverySchema
 @router.post('/verify-delivery')
-async def verify_delivery(data:VerifyDeliverySchema,session:PG_SESSION,user_id: Optional[str] = Depends(get_current_user_id)):
-    return await HandleOrderRequest(session=session,shop_id=data.shop_id,cur_user_id=user_id or "").verify_delivery(data=data)
+async def verify_delivery(data:VerifyDeliverySchema,session:PG_SESSION,request: Request,user_id: Optional[str] = Depends(get_current_user_id)):
+    user_info = await get_current_user_info(request=request)
+    return await HandleOrderRequest(session=session,shop_id=data.shop_id,cur_user_id=user_id or "",cur_user_info=user_info).verify_delivery(data=data)
 
 
 @router.delete('/{shop_id}/{id}')

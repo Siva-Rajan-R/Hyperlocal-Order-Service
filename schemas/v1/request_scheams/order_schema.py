@@ -277,6 +277,7 @@ class UpdateOrderStatusSchema(BaseModel):
     shop_id: str
     status: Optional[OrderStatusEnum] = None
     payment_infos: Optional[dict] = None
+    additional_infos: Optional[dict] = None
 
 class GetBulkOrdersSchema(BaseModel):
     shop_id: str

@@ -259,7 +259,8 @@ class MessagingQueueOrderProducer:
                             item_infos['total_order_items'] += 1
                             item_infos['total_order_qty'] += stocks
                             
-                            is_online_order = str(origin).upper() == "ONLINE"
+                            orig_val = getattr(origin, "value", origin) if origin else ""
+                            is_online_order = "ONLINE" in str(orig_val).upper() if orig_val else False
                             if is_online_order:
                                 online_sp = pricing_infos.get('online_sell_price')
                                 if online_sp is not None and float(online_sp) > 0:
@@ -360,26 +361,80 @@ class MessagingQueueOrderProducer:
 
                 await repo.create_bulk_items(datas=order_items_toadd)
 
-                on_credit_amt = 0
-                total_amount_paid = 0
-                for method, amount in payment_infos.items():
-                    if method == "ON_CREDIT":
-                        on_credit_amt += amount
-                    else:
-                        total_amount_paid += amount
-                total_ord_cost = float(item_infos['total_order_amount'])
-                outstanding_amount = on_credit_amt if on_credit_amt > 0 else max(0.0, total_ord_cost - total_amount_paid)
-                ic(total_amount_paid, total_ord_cost, outstanding_amount)
+                def _parse_amount(v) -> float:
+                    if v is None:
+                        return 0.0
+                    if isinstance(v, (int, float)):
+                        return float(v)
+                    if isinstance(v, dict):
+                        for key in ("amount", "paid", "total", "value"):
+                            if key in v and v[key] is not None:
+                                try:
+                                    return float(v[key])
+                                except (ValueError, TypeError):
+                                    pass
+                        for val in v.values():
+                            if isinstance(val, (int, float)):
+                                return float(val)
+                            try:
+                                return float(val)
+                            except (ValueError, TypeError):
+                                pass
+                        return 0.0
+                    try:
+                        return float(v)
+                    except (ValueError, TypeError):
+                        return 0.0
 
-                if outstanding_amount == 0:
-                    outstanding_status = "COMPLETED"
-                elif total_amount_paid == 0:
-                    if (origin == "ONLINE" or origin == OrderOriginEnum.ONLINE.value):
-                        outstanding_status = "CASH ON DELIVERY"
-                    else:
-                        outstanding_status = "NOT-PAID"
+                on_credit_amt = 0.0
+                total_amount_paid = 0.0
+                parsed_payment_infos = {}
+
+                if isinstance(payment_infos, dict):
+                    for method, amount in payment_infos.items():
+                        num_amount = _parse_amount(amount)
+                        parsed_payment_infos[method] = num_amount
+                        method_str = str(method).strip().upper()
+                        if method_str in ("ON_CREDIT", "ON CREDIT"):
+                            on_credit_amt += num_amount
+                        elif method_str in ("COD", "CASH ON DELIVERY"):
+                            # For COD, payment is collected upon delivery, not upfront
+                            pass
+                        else:
+                            total_amount_paid += num_amount
+                elif isinstance(payment_infos, list):
+                    for item in payment_infos:
+                        if isinstance(item, dict):
+                            method = item.get("mode") or item.get("method") or item.get("type") or "CASH"
+                            num_amount = _parse_amount(item.get("amount", item.get("value", 0)))
+                            parsed_payment_infos[method] = num_amount
+                            method_str = str(method).strip().upper()
+                            if method_str in ("ON_CREDIT", "ON CREDIT"):
+                                on_credit_amt += num_amount
+                            elif method_str in ("COD", "CASH ON DELIVERY"):
+                                pass
+                            else:
+                                total_amount_paid += num_amount
+
+                total_ord_cost = float(item_infos['total_order_amount'])
+                is_cod = any(str(m).strip().upper() in ("COD", "CASH ON DELIVERY") for m in parsed_payment_infos.keys())
+
+                if is_cod and (origin == "ONLINE" or origin == OrderOriginEnum.ONLINE.value):
+                    outstanding_status = "CASH ON DELIVERY"
+                    outstanding_amount = total_ord_cost
                 else:
-                    outstanding_status = "PARTIALY-PAID"
+                    outstanding_amount = on_credit_amt if on_credit_amt > 0 else max(0.0, total_ord_cost - total_amount_paid)
+                    if outstanding_amount == 0:
+                        outstanding_status = "COMPLETED"
+                    elif total_amount_paid == 0:
+                        if (origin == "ONLINE" or origin == OrderOriginEnum.ONLINE.value):
+                            outstanding_status = "CASH ON DELIVERY"
+                        else:
+                            outstanding_status = "NOT-PAID"
+                    else:
+                        outstanding_status = "PARTIALY-PAID"
+
+                ic(total_amount_paid, total_ord_cost, outstanding_amount, outstanding_status)
 
 
                 read_db_order_payload = {
@@ -421,19 +476,18 @@ class MessagingQueueOrderProducer:
                 
 
                 if customer_id:
-                    non_credit_paid = sum(amt for m, amt in payment_infos.items() if m != "ON_CREDIT") if isinstance(payment_infos, dict) else 0.0
+                    non_credit_paid = total_amount_paid
                     pay_infos_list = []
-                    if isinstance(payment_infos, dict):
-                        for m, amt in payment_infos.items():
-                            if amt > 0:
-                                pay_infos_list.append({
-                                    "mode": m,
-                                    "method": m,
-                                    "amount": float(amt),
-                                    "notes": f"Payment for order {ui_id}"
-                                })
+                    for m, amt in parsed_payment_infos.items():
+                        if str(m).strip().upper() not in ("ON_CREDIT", "ON CREDIT", "COD", "CASH ON DELIVERY") and amt > 0:
+                            pay_infos_list.append({
+                                "mode": m,
+                                "method": m,
+                                "amount": float(amt),
+                                "notes": f"Payment for order {ui_id}"
+                            })
 
-                    is_credit_billed = bool((on_credit_amt > 0 and non_credit_paid == 0) or (isinstance(payment_infos, dict) and "ON_CREDIT" in payment_infos and payment_infos.get("ON_CREDIT", 0) > 0 and non_credit_paid == 0))
+                    is_credit_billed = bool((on_credit_amt > 0 and non_credit_paid == 0) or (parsed_payment_infos.get("ON_CREDIT", 0) > 0 and non_credit_paid == 0))
                     primary_method = "ON_CREDIT" if is_credit_billed else "CASH"
                     notes_str = f"Initial payment of {non_credit_paid} for order {ui_id}" if non_credit_paid > 0 else f"Order {ui_id} billed (on credit)"
 

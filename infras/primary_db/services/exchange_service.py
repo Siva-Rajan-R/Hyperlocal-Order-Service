@@ -353,7 +353,8 @@ class ExchangeService:
                     "reason": exc_item_dict.get("reason"),
                 })
 
-                is_online_order = str(order_data.get("origin", "")).upper() == "ONLINE"
+                orig_val = order_data.get("origin", "")
+                is_online_order = "ONLINE" in str(getattr(orig_val, "value", orig_val)).upper()
                 exchange_entity_name = "ONLINE_SALES_RETURN" if is_online_order else "OFFLINE_SALES_RETURN"
                 replacement_entity_name = "ONLINE_SALES" if is_online_order else "OFFLINE_SALES"
                 order_ui_id = order_data.get("ui_id") or (read_db_order.get("ui_id") if read_db_order else None) or order_data.get("id")

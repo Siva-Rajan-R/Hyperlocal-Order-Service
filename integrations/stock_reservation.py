@@ -1,6 +1,6 @@
 import httpx
 from fastapi import APIRouter, HTTPException, Depends
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Any
 from datetime import datetime, timezone, timedelta
 from hyperlocal_platform.core.utils.uuid_generator import generate_uuid
 from hyperlocal_platform.core.models.req_res_models import SuccessResponseTypDict, BaseResponseTypDict, ErrorResponseTypDict
@@ -117,7 +117,7 @@ async def create_reservation(data:CartReserveRequest):
 
 
 
-async def commit_reservation(session_id:str, entity_id: Optional[str] = None, origin: Optional[str] = None):
+async def commit_reservation(session_id:str, entity_id: Optional[str] = None, origin: Optional[str] = None, order_data: Optional[Any] = None):
     cart = OrderCartCacheModel(session_id)
     items = await cart.get_cart()
     
@@ -134,12 +134,34 @@ async def commit_reservation(session_id:str, entity_id: Optional[str] = None, or
                 u_ctx = {}
             u_name = u_ctx.get("name") or u_ctx.get("user_name") or ""
             u_email = u_ctx.get("email") or ""
+
+            orig_val = getattr(origin, "value", origin) if origin else ""
+            is_online = "ONLINE" in str(orig_val).upper() if orig_val else False
+            entity_name = "ONLINE_SALES" if is_online else "OFFLINE_SALES"
+
+            # If staff context is absent and this is an online order, extract customer info
+            if is_online and not u_name and not u_email and order_data:
+                c_name = getattr(order_data, "name", None) or (order_data.get("name") if isinstance(order_data, dict) else None)
+                c_email = getattr(order_data, "email", None) or (order_data.get("email") if isinstance(order_data, dict) else None)
+                c_phone = getattr(order_data, "phone", None) or (order_data.get("phone") if isinstance(order_data, dict) else None)
+                c_uid = getattr(order_data, "user_id", None) or (order_data.get("user_id") if isinstance(order_data, dict) else None)
+                if c_name:
+                    u_name = c_name
+                    u_email = c_email or ""
+                    u_ctx = {
+                        "name": c_name,
+                        "email": u_email,
+                        "phone": c_phone,
+                        "user_id": c_uid,
+                        "id": c_uid,
+                        "role": "Customer"
+                    }
+
             added_by_str = u_name or u_email or "System"
             if u_name and u_email and f"- {u_email}" not in added_by_str:
                 added_by_str = f"{u_name} - {u_email}"
-
-            is_online = str(origin).upper() == "ONLINE" if origin else False
-            entity_name = "ONLINE_SALES" if is_online else "OFFLINE_SALES"
+            elif is_online and u_name and f"(Online)" not in added_by_str and not u_email:
+                added_by_str = f"{u_name} (Online)"
 
             req_body = {
                 "session_id": session_id,

@@ -56,7 +56,7 @@ class OrdersService:
             import datetime
             ui_id_val = f"ORD-{int(datetime.datetime.utcnow().timestamp())}"
 
-        reservation_complete_res=await commit_reservation(session_id=data.session_id, entity_id=ui_id_val, origin=data.origin)
+        reservation_complete_res=await commit_reservation(session_id=data.session_id, entity_id=ui_id_val, origin=data.origin, order_data=data)
         if not reservation_complete_res:
             ic("Cant able to reserve the stocks please try again")
             return False
@@ -151,12 +151,75 @@ class OrdersService:
         }
     
 
-    async def update(self,data:UpdateOrderStatusSchema, executing_user_id: Optional[str] = None):
-        old_order_data = await OrdersRepo(session=self.session).getby_id(data=GetOrderByIdSchema(id=data.id, shop_id=data.shop_id))
+    async def update(self, data: UpdateOrderStatusSchema, executing_user_id: Optional[str] = None, executing_user_info: Optional[dict] = None):
+        # 1. Resolve executing user information
+        u_info = executing_user_info or {}
+        if not u_info:
+            try:
+                from core.utils.user_context import current_user_ctx
+                u_info = current_user_ctx.get() or {}
+            except Exception:
+                u_info = {}
         
+        user_name = u_info.get("name") or u_info.get("user_name") or ""
+        user_email = u_info.get("email") or ""
+        u_id = executing_user_id or u_info.get("user_id") or u_info.get("id") or ""
+        u_role = u_info.get("role") or ""
+
+        if user_name and user_email and f"- {user_email}" not in user_name:
+            user_display = f"{user_name} - {user_email}"
+        elif user_email:
+            user_display = user_email
+        elif user_name:
+            user_display = user_name
+        else:
+            user_display = "Staff"
+
+        # 2. Fetch existing order data
+        old_order_row = await OrdersRepo(session=self.session).getby_id(data=GetOrderByIdSchema(id=data.id, shop_id=data.shop_id))
+        old_order_dict = dict(old_order_row._mapping) if old_order_row and hasattr(old_order_row, "_mapping") else (dict(old_order_row) if old_order_row else {})
+        old_status = str(old_order_dict.get("status") or "").upper()
+        new_status = (data.status.value if hasattr(data.status, "value") else str(data.status)).upper() if data.status else None
+
+        # 3. Update status history and tracking in additional_infos
+        existing_add = old_order_dict.get("additional_infos") or {}
+        if not isinstance(existing_add, dict):
+            existing_add = {}
+        else:
+            existing_add = dict(existing_add)
+
+        status_history = existing_add.get("status_history") or []
+        if not isinstance(status_history, list):
+            status_history = []
+        
+        from datetime import datetime, timezone
+        status_history.append({
+            "from_status": old_status,
+            "to_status": new_status,
+            "updated_by": user_display,
+            "user_id": u_id,
+            "user_email": user_email,
+            "user_name": user_name,
+            "user_role": u_role,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+        existing_add["status_history"] = status_history
+        existing_add["status_updated_by"] = user_display
+        if new_status in ("ACCEPTED", "ACCEPT"):
+            existing_add["accepted_by"] = user_display
+        elif new_status in ("CANCELED", "CANCELLED", "REJECTED"):
+            existing_add["canceled_by"] = user_display
+            existing_add["rejected_by"] = user_display
+        elif new_status in ("OUT_FOR_DELIVERY", "OUT-FOR-DELIVERY", "OUT FOR DELIVERY"):
+            existing_add["dispatched_by"] = user_display
+        elif new_status in ("DELIVERED",):
+            existing_add["delivered_by"] = user_display
+
+        data.additional_infos = existing_add
+
         from schemas.v1.db_schemas.order_schema import UpdateOrderDbSchema
-        repo_data=UpdateOrderDbSchema(
-            **data.model_dump(mode='json',exclude_unset=True,exclude_none=True)
+        repo_data = UpdateOrderDbSchema(
+            **data.model_dump(mode='json', exclude_unset=True, exclude_none=True)
         )
         res = await OrdersRepo(session=self.session).update(data=repo_data)
         if res:
@@ -164,12 +227,100 @@ class OrdersService:
             
             # --- Delivery Code Logic ---
             from infras.read_db.repos.delivery_code_repo import DeliveryCodeRepo
-            new_status = (data.status.value if hasattr(data.status, "value") else str(data.status)).upper() if data.status else None
             if new_status in ("OUT_FOR_DELIVERY", "OUT-FOR-DELIVERY", "OUT FOR DELIVERY"):
                 await DeliveryCodeRepo.generate_and_store_code(shop_id=data.shop_id, order_id=data.id)
-            elif new_status in ("CANCELED", "CANCELLED", "DELIVERED"):
+            elif new_status in ("CANCELED", "CANCELLED", "DELIVERED", "REJECTED"):
                 await DeliveryCodeRepo.delete_code(shop_id=data.shop_id, order_id=data.id)
             # ---------------------------
+
+            # --- Restore Stock on Order Cancel / Reject ---
+            if new_status in ("CANCELED", "CANCELLED", "REJECTED") and old_status not in ("CANCELED", "CANCELLED", "REJECTED"):
+                orig_val = old_order_dict.get("origin", "")
+                is_online = "ONLINE" in str(getattr(orig_val, "value", orig_val)).upper()
+                order_ui_id = old_order_dict.get("ui_id") or data.id
+                items = old_order_dict.get("items") or []
+
+                if not items:
+                    try:
+                        read_order = await OrderReadDbRepo.get_by_id(shop_id=data.shop_id, order_id=data.id)
+                        if read_order:
+                            items = read_order.get("items") or []
+                    except Exception as e:
+                        ic(f"Could not load items from read_db for stock restoration: {e}")
+
+                products_toupdate = []
+                for itm in items:
+                    itm_d = dict(itm) if isinstance(itm, dict) else (dict(itm._mapping) if hasattr(itm, "_mapping") else itm.__dict__)
+                    prod_id = itm_d.get("product_id")
+                    qty = float(itm_d.get("qty") or itm_d.get("quantity") or 0)
+                    if not prod_id or qty <= 0:
+                        continue
+                    
+                    b_id = itm_d.get("batch_id")
+                    v_id = itm_d.get("variant_id")
+                    
+                    note_action = "online sale" if is_online else "sales"
+                    products_toupdate.append({
+                        "shop_id": data.shop_id,
+                        "product_id": prod_id,
+                        "variant_id": v_id,
+                        "batch_infos": {"id": b_id} if b_id else None,
+                        "serialno_infos": itm_d.get("serialno_infos") or itm_d.get("serial_numbers") or [],
+                        "stocks": qty,
+                        "entity_name": "ONLINE_SALES" if is_online else "OFFLINE_SALES",
+                        "type": "INCREMENT",
+                        "create_stock_mov_adj": True,
+                        "ui_id": order_ui_id,
+                        "order_ui_id": order_ui_id,
+                        "sale_ui_id": order_ui_id,
+                        "entity_id": order_ui_id,
+                        "order_id": data.id,
+                        "added_by": user_display,
+                        "user_id": u_id,
+                        "user_name": user_name,
+                        "user_email": user_email,
+                        "user_role": u_role,
+                        "user_info": u_info,
+                        "user_infos": u_info,
+                        "description": f"Stock increase via {note_action} ({order_ui_id})"
+                    })
+
+                if products_toupdate:
+                    restored_via_http = False
+                    try:
+                        import httpx
+                        import os
+                        inv_service_url = os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8004").rstrip("/")
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            http_resp = await client.post(
+                                f"{inv_service_url}/inventories/bulk-update",
+                                json=products_toupdate
+                            )
+                            if http_resp.status_code == 200:
+                                restored_via_http = True
+                                ic(f"Direct HTTP stock restoration succeeded for order {order_ui_id}")
+                            else:
+                                ic(f"Direct HTTP stock restoration returned status {http_resp.status_code}: {http_resp.text}")
+                    except Exception as http_err:
+                        ic(f"Direct HTTP stock restoration failed: {http_err}")
+
+                    if not restored_via_http:
+                        try:
+                            from messaging.main import RabbitMQMessagingConfig
+                            rabbitmq_msg_obj = RabbitMQMessagingConfig()
+                            await rabbitmq_msg_obj.publish_event(
+                                routing_key="products.service.routing.key",
+                                exchange_name="products.service.exchange",
+                                payload={"body": products_toupdate},
+                                headers={
+                                    "service_name": "PRODUCTS",
+                                    "entity_name": "update_bulk_prodinv",
+                                    "body": products_toupdate
+                                }
+                            )
+                            ic(f"Published stock restoration event for order {order_ui_id}")
+                        except Exception as e:
+                            ic(f"Failed to publish inventory restoration on order cancel/reject: {e}")
 
             order_data = await OrdersRepo(session=self.session).getby_id(data=GetOrderByIdSchema(id=data.id, shop_id=data.shop_id))
             if order_data:

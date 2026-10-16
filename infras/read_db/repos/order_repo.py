@@ -137,15 +137,19 @@ class OrderReadDbRepo:
             and_clauses.append({
                 "$or": [
                     {
-                        "origin": {"$nin": ["ONLINE", "online", "Online"]},
+                        "origin": {"$nin": ["ONLINE", "online", "Online", "OrderOriginEnum.ONLINE"]},
                         "online_details": None
                     },
                     {
-                        "origin": {"$nin": ["ONLINE", "online", "Online"]},
+                        "origin": {"$nin": ["ONLINE", "online", "Online", "OrderOriginEnum.ONLINE"]},
                         "online_details": {"$exists": False}
                     },
                     {
-                        "status": {"$in": ["DELIVERED", "delivered", "Delivered"]}
+                        "origin": {"$nin": ["ONLINE", "online", "Online", "OrderOriginEnum.ONLINE"]},
+                        "online_details": {}
+                    },
+                    {
+                        "status": {"$in": ["DELIVERED", "delivered", "Delivered", "COMPLETED", "completed", "Completed"]}
                     }
                 ]
             })
