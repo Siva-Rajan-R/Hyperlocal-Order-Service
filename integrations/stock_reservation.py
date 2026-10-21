@@ -16,14 +16,16 @@ load_dotenv()
 
 BASE_URL = f"{os.getenv('INVENTORY_SERVICE_URL', 'http://127.0.0.1:8004')}/inventories"
 SHOP_SERVICE_URL = os.getenv("SHOP_SERVICE_URL", "http://127.0.0.1:8001")
-TTL_MINUTES = 3
+TTL_MINUTES = 20
 
 async def create_reservation(data:CartReserveRequest):
     cart = OrderCartCacheModel(data.session_id)
     existing_cart = await cart.get_cart()
     ic(existing_cart)
     if existing_cart is None:
-        raise HTTPException(status_code=400, detail="Invalid or expired session")
+        # Auto-initialize session if expired or not found so billing does not fail
+        await cart.set_cart(items=[], ttl=TTL_MINUTES * 60)
+        existing_cart = []
     
     # Check if shop is visibility only
     if data.shop_id:

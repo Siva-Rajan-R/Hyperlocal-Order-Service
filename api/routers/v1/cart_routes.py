@@ -14,7 +14,7 @@ router = APIRouter(
 )
 
 INVENTORY_SERVICE_URL = "http://127.0.0.1:8004/inventories"
-TTL_MINUTES = 15
+TTL_MINUTES = 20
 
 @router.post('/init')
 async def init_cart():

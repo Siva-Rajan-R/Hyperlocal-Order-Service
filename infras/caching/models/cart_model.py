@@ -13,10 +13,10 @@ class OrderCartCacheModel:
         ic(data)
         return data
 
-    async def set_cart(self, items: List[dict], ttl: int = 180) -> bool:
+    async def set_cart(self, items: List[dict], ttl: int = 1200) -> bool:
         return await RedisRepo.set(key=self.cache_key, value=items, expire=ttl)
 
-    async def add_or_update_item(self, item: dict, ttl: int = 180) -> bool:
+    async def add_or_update_item(self, item: dict, ttl: int = 1200) -> bool:
         cart = await self.get_cart() or []
         
         # Check if item exists (by product_id, variant_id, batch_id)
