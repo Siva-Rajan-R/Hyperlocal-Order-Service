@@ -139,8 +139,11 @@ def resolve_item_unit_price(
 
     # 4. Fallback from sell_price
     raw_sp = float(item_dict.get('sell_price') or 0.0)
-    gst_rate = resolve_item_gst_rate(item_dict, calculation_infos, read_db_order)
-    if gst_rate > 0:
+    include_gst = calculation_infos.get('include_gst')
+    gst_type = calculation_infos.get('gst_type')
+    # If explicitly exclusive GST order, add GST rate; otherwise sell_price is already inclusive
+    if include_gst is True and gst_type == 'EXCLUSIVE':
+        gst_rate = resolve_item_gst_rate(item_dict, calculation_infos, read_db_order)
         return raw_sp * (1.0 + gst_rate)
 
     return raw_sp
@@ -478,8 +481,12 @@ class ExchangeService:
                     enriched_replacement_items.append(rep_dump)
 
                     is_order_gst = calculation_infos.get('include_gst') is True or float(calculation_infos.get('gst_amount') or 0.0) > 0
-                    rep_gst_rate = parse_gst_rate(gst) if is_order_gst else 0.0
-                    rep_unit_sell_price_with_gst = rep_dump["sell_price"] * (1.0 + rep_gst_rate) if is_order_gst else rep_dump["sell_price"]
+                    gst_type = calculation_infos.get('gst_type')
+                    if is_order_gst and gst_type == 'EXCLUSIVE':
+                        rep_gst_rate = parse_gst_rate(gst)
+                        rep_unit_sell_price_with_gst = rep_dump["sell_price"] * (1.0 + rep_gst_rate)
+                    else:
+                        rep_unit_sell_price_with_gst = rep_dump["sell_price"]
                     total_replacement_qty += rep_qty_in_base
                     total_replacement_amount += rep_unit_sell_price_with_gst * rep_qty_in_base
 

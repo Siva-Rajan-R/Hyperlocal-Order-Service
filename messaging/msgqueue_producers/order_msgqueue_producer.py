@@ -277,13 +277,19 @@ class MessagingQueueOrderProducer:
                             except ValueError:
                                 gst_rate = 0.0
                             
-                            # Base selling price is sell_price_val (excl. GST)
-                            raw_sell_price = sell_price_val
-                            gst_amount = sell_price_val * gst_rate
+                            # Selling price is always INCLUSIVE of GST (e.g. 100 SP with 5% GST = 95.24 base + 4.76 GST)
+                            inclusive_unit_price = sell_price_val
+                            if gst_rate > 0:
+                                taxable_unit = round(inclusive_unit_price / (1.0 + gst_rate), 2)
+                                gst_amount = round(inclusive_unit_price - taxable_unit, 2)
+                            else:
+                                taxable_unit = inclusive_unit_price
+                                gst_amount = 0.0
+
                             total_item_gst = gst_amount * stocks
                             
-                            # total_order_amount must exclude GST (raw amount)
-                            item_infos['total_order_amount'] += (raw_sell_price * stocks)
+                            # total_order_amount represents the customer payable amount (inclusive of GST)
+                            item_infos['total_order_amount'] += (inclusive_unit_price * stocks)
                             item_infos['total_order_gst_amount'] += total_item_gst
                             ic(item_infos)
 
@@ -300,7 +306,7 @@ class MessagingQueueOrderProducer:
                                 serialno_infos=itm.get('serialno_infos') or [],
                                 gst=gst,
                                 buy_price=pricing_infos.get('buy_price', 0.0),
-                                sell_price=raw_sell_price,
+                                sell_price=inclusive_unit_price,
                                 quantity=stocks,
                                 entered_qty=itm.get('entered_qty'),
                                 entered_unit=itm.get('entered_unit'),
@@ -323,14 +329,14 @@ class MessagingQueueOrderProducer:
                                     } if batch_id else None,
                                     "serialno_infos": itm['serialno_infos'] if itm['serialno_infos'] else None,
                                     "buy_price": pricing_infos.get('buy_price', 0.0),
-                                    "sell_price": raw_sell_price,
+                                    "sell_price": inclusive_unit_price,
                                     "quantity": stocks,
                                     "entered_qty": itm.get('entered_qty'),
                                     "entered_unit": itm.get('entered_unit'),
                                     "stock_before":stock_before,
                                     "stock_after":stock_after,
                                     "returned_quantity": 0.0,
-                                    "total_amount": raw_sell_price * stocks,
+                                    "total_amount": inclusive_unit_price * stocks,
                                     "status": status,
                                     "gst": gst
                                 }
@@ -416,7 +422,7 @@ class MessagingQueueOrderProducer:
                             else:
                                 total_amount_paid += num_amount
 
-                total_ord_cost = float(item_infos['total_order_amount'])
+                total_ord_cost = float(calculation_infos.get('grand_total') or calculation_infos.get('total') or item_infos['total_order_amount'])
                 is_cod = any(str(m).strip().upper() in ("COD", "CASH ON DELIVERY") for m in parsed_payment_infos.keys())
 
                 if is_cod and (origin == "ONLINE" or origin == OrderOriginEnum.ONLINE.value):
@@ -579,12 +585,19 @@ class MessagingQueueOrderProducer:
                     from helpers.emit_notification import emit_notification
                     import asyncio
                     executing_user_id = datas.get("executing_user_id")
+                    is_online = bool(str(origin).upper() in ("ONLINE", "DIGITAL_STORE"))
                     asyncio.create_task(emit_notification(
-                        title="Order Placed",
-                        message=f"Order '{ui_id}' has been successfully placed.",
+                        title="Online Order Placed" if is_online else "Order Placed",
+                        message=f"{'Online order' if is_online else 'Order'} '{ui_id}' has been successfully placed.",
                         type="info",
                         user_id=executing_user_id or shop_id,
-                        additional_metadata={"order_id": order_id}
+                        additional_metadata={
+                            "order_id": order_id,
+                            "origin": origin,
+                            "is_online": is_online,
+                            "category": "digital_store" if is_online else "order",
+                            "channel": "digital_store" if is_online else "pos"
+                        }
                     ))
                 except Exception as notification_error:
                     ic(f"Notification error: {notification_error}")
