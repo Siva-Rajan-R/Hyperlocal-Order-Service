@@ -35,6 +35,31 @@ class OrdersService:
         cart_data = await cart.get_cart()
         ic(cart_data)
         if not cart_data:
+            # Self-heal: If session expired or empty, attempt auto-initialization from calculation_infos items
+            calc_items = data.calculation_infos.get("items", []) if isinstance(data.calculation_infos, dict) else []
+            if calc_items:
+                from schemas.v1.request_scheams.cart_schema import CartReserveRequest
+                from integrations.stock_reservation import create_reservation
+                ic("Cart session missing or expired in Redis; auto-populating from calculation_infos items")
+                for ci in calc_items:
+                    prod_id = ci.get("product_id") or ci.get("id")
+                    if prod_id:
+                        try:
+                            reserve_req = CartReserveRequest(
+                                session_id=data.session_id,
+                                shop_id=data.shop_id,
+                                product_id=prod_id,
+                                qty=float(ci.get("qty", 1)),
+                                unit=ci.get("unit"),
+                                variant_id=ci.get("variant_id"),
+                                batch_id=ci.get("batch_id")
+                            )
+                            await create_reservation(reserve_req)
+                        except Exception as e:
+                            ic(f"Auto-reservation of item {prod_id} failed: {e}")
+                cart_data = await cart.get_cart()
+
+        if not cart_data:
             raise HTTPException(
                 status_code=400,
                 detail=ErrorResponseTypDict(
