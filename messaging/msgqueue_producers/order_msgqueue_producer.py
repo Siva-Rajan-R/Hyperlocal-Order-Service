@@ -277,11 +277,11 @@ class MessagingQueueOrderProducer:
                             except ValueError:
                                 gst_rate = 0.0
                             
-                            # Selling price is always INCLUSIVE of GST (e.g. 100 SP with 5% GST = 95.24 base + 4.76 GST)
+                            # Selling price is always INCLUSIVE of GST (e.g. 100 SP with 5% GST = 95 base + 5 GST)
                             inclusive_unit_price = sell_price_val
                             if gst_rate > 0:
-                                taxable_unit = round(inclusive_unit_price / (1.0 + gst_rate), 2)
-                                gst_amount = round(inclusive_unit_price - taxable_unit, 2)
+                                gst_amount = round(inclusive_unit_price * gst_rate, 2)
+                                taxable_unit = round(inclusive_unit_price - gst_amount, 2)
                             else:
                                 taxable_unit = inclusive_unit_price
                                 gst_amount = 0.0
@@ -310,6 +310,7 @@ class MessagingQueueOrderProducer:
                                 quantity=stocks,
                                 entered_qty=itm.get('entered_qty'),
                                 entered_unit=itm.get('entered_unit'),
+                                additional_infos={"taxable_price": taxable_unit, "gst_amount": gst_amount},
                             ))
 
                             read_items.append(
@@ -330,6 +331,8 @@ class MessagingQueueOrderProducer:
                                     "serialno_infos": itm['serialno_infos'] if itm['serialno_infos'] else None,
                                     "buy_price": pricing_infos.get('buy_price', 0.0),
                                     "sell_price": inclusive_unit_price,
+                                    "taxable_price": taxable_unit,
+                                    "gst_amount": gst_amount,
                                     "quantity": stocks,
                                     "entered_qty": itm.get('entered_qty'),
                                     "entered_unit": itm.get('entered_unit'),

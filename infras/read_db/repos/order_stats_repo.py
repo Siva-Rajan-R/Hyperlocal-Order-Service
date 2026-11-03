@@ -232,7 +232,7 @@ class DashboardStatsRepo:
                             {
                                 "$group": {
                                     "_id": "$_id",
-                                    "order_revenue": {"$sum": {"$multiply": ["$items.sell_price", "$items.quantity"]}},
+                                    "order_revenue": {"$sum": {"$multiply": [{"$ifNull": ["$items.taxable_price", "$items.sell_price"]}, "$items.quantity"]}},
                                     "order_cost": {"$sum": {"$multiply": ["$items.buy_price", "$items.quantity"]}},
                                 }
                             },
@@ -278,7 +278,7 @@ class DashboardStatsRepo:
                                 "$group": {
                                     "_id": None,
                                     "total_returns_value": {
-                                        "$sum": {"$multiply": ["$items.sell_price", "$items.quantity"]}
+                                        "$sum": {"$multiply": [{"$ifNull": ["$items.taxable_price", "$items.sell_price"]}, "$items.quantity"]}
                                     },
                                     "total_returns_count": {"$sum": 1}
                                 }
@@ -315,7 +315,7 @@ class DashboardStatsRepo:
                                     ]}},
                                     "total_qty": {"$sum": "$items.quantity"},
                                     "total_revenue": {
-                                        "$sum": {"$multiply": ["$items.sell_price", "$items.quantity"]}
+                                        "$sum": {"$multiply": [{"$ifNull": ["$items.taxable_price", "$items.sell_price"]}, "$items.quantity"]}
                                     },
                                     "total_cost": {
                                         "$sum": {"$multiply": ["$items.buy_price", "$items.quantity"]}
@@ -346,7 +346,7 @@ class DashboardStatsRepo:
                                         "order_id": "$_id",
                                         "date": "$order_date"
                                     },
-                                    "order_revenue": {"$sum": {"$multiply": ["$items.sell_price", "$items.quantity"]}},
+                                    "order_revenue": {"$sum": {"$multiply": [{"$ifNull": ["$items.taxable_price", "$items.sell_price"]}, "$items.quantity"]}},
                                     "order_cost": {"$sum": {"$multiply": ["$items.buy_price", "$items.quantity"]}}
                                 }
                             },
@@ -373,7 +373,7 @@ class DashboardStatsRepo:
                             {
                                 "$group": {
                                     "_id": {"$ifNull": ["$items.datas.category", "Uncategorized"]},
-                                    "total_revenue": {"$sum": {"$multiply": ["$items.sell_price", "$items.quantity"]}}
+                                    "total_revenue": {"$sum": {"$multiply": [{"$ifNull": ["$items.taxable_price", "$items.sell_price"]}, "$items.quantity"]}}
                                 }
                             },
                             {"$sort": {"total_revenue": -1}}
@@ -386,7 +386,7 @@ class DashboardStatsRepo:
                             {
                                 "$group": {
                                     "_id": {"$ifNull": ["$items.datas.supplier", "Unknown"]},
-                                    "total_revenue": {"$sum": {"$multiply": ["$items.sell_price", "$items.quantity"]}},
+                                    "total_revenue": {"$sum": {"$multiply": [{"$ifNull": ["$items.taxable_price", "$items.sell_price"]}, "$items.quantity"]}},
                                     "total_cost": {"$sum": {"$multiply": ["$items.buy_price", "$items.quantity"]}},
                                     "total_qty": {"$sum": "$items.quantity"}
                                 }
