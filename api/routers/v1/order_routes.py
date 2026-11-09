@@ -26,7 +26,63 @@ async def update_status(data:UpdateOrderStatusSchema,session:PG_SESSION,request:
     user_info = await get_current_user_info(request=request)
     return await HandleOrderRequest(session=session,shop_id=getattr(data, "shop_id", SHOP_ID) or SHOP_ID,cur_user_id=user_id or "",cur_user_info=user_info).update(data=data)
 
-from schemas.v1.request_scheams.order_schema import VerifyDeliverySchema
+from schemas.v1.request_scheams.order_schema import VerifyDeliverySchema, CreateReturnRequestSchema, UpdateReturnRequestStatusSchema
+from infras.read_db.repos.return_request_repo import ReturnRequestRepo
+
+@router.post('/return-request')
+@router.post('/returns/request')
+async def create_online_return_request(
+    data: CreateReturnRequestSchema,
+    session: PG_SESSION,
+    request: Request
+):
+    user_info = await get_current_user_info(request=request)
+    res = await ReturnRequestRepo.create_request(data=data, session=session, user_info=user_info)
+    return SuccessResponseTypDict(
+        detail=BaseResponseTypDict(
+            status_code=201,
+            msg="Return request submitted successfully",
+            success=True
+        ),
+        data=res
+    )
+
+@router.get('/return-requests/{shop_id}')
+async def get_shop_order_return_requests(
+    shop_id: str,
+    status: Optional[str] = Query(None),
+    order_id: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(1, ge=1)
+):
+    res = await ReturnRequestRepo.get_by_shop_id(shop_id=shop_id, status=status, order_id=order_id, limit=limit, offset=offset)
+    return SuccessResponseTypDict(
+        detail=BaseResponseTypDict(
+            status_code=200,
+            msg="Return requests fetched successfully",
+            success=True
+        ),
+        data=res
+    )
+
+@router.put('/return-requests/{request_id}/status')
+@router.patch('/return-requests/{request_id}/status')
+async def update_order_return_request_status(
+    request_id: str,
+    data: UpdateReturnRequestStatusSchema,
+    request: Request
+):
+    user_info = await get_current_user_info(request=request)
+    res = await ReturnRequestRepo.update_status(request_id=request_id, data=data, user_info=user_info)
+    return SuccessResponseTypDict(
+        detail=BaseResponseTypDict(
+            status_code=200,
+            msg=f"Return request status updated to {data.status.upper()}",
+            success=True
+        ),
+        data=res
+    )
+
 @router.post('/verify-delivery')
 async def verify_delivery(data:VerifyDeliverySchema,session:PG_SESSION,request: Request,user_id: Optional[str] = Depends(get_current_user_id)):
     user_info = await get_current_user_info(request=request)

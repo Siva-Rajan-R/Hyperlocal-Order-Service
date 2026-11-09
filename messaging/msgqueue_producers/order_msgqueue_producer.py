@@ -277,11 +277,11 @@ class MessagingQueueOrderProducer:
                             except ValueError:
                                 gst_rate = 0.0
                             
-                            # Selling price is always INCLUSIVE of GST (e.g. 100 SP with 5% GST = 95 base + 5 GST)
+                            # Selling price is always INCLUSIVE of GST (e.g. 100 SP with 18% GST = 84.75 base + 15.25 GST)
                             inclusive_unit_price = sell_price_val
                             if gst_rate > 0:
-                                gst_amount = round(inclusive_unit_price * gst_rate, 2)
-                                taxable_unit = round(inclusive_unit_price - gst_amount, 2)
+                                taxable_unit = round(inclusive_unit_price / (1.0 + gst_rate), 2)
+                                gst_amount = round(inclusive_unit_price - taxable_unit, 2)
                             else:
                                 taxable_unit = inclusive_unit_price
                                 gst_amount = 0.0
@@ -344,6 +344,15 @@ class MessagingQueueOrderProducer:
                                     "gst": gst
                                 }
                             )
+
+                if not calculation_infos.get("gst_amount"):
+                    calculation_infos["gst_amount"] = round(item_infos["total_order_gst_amount"], 2)
+                if not calculation_infos.get("taxable_amount"):
+                    calculation_infos["taxable_amount"] = round(sum(i["taxable_price"] * i["quantity"] for i in read_items if "taxable_price" in i), 2)
+                if not calculation_infos.get("subtotal"):
+                    calculation_infos["subtotal"] = round(item_infos["total_order_amount"], 2)
+                if not calculation_infos.get("grand_total"):
+                    calculation_infos["grand_total"] = round(item_infos["total_order_amount"], 2)
 
                 order_toadd=CreateOrderDbSchema(
                     id=order_id,
@@ -446,13 +455,35 @@ class MessagingQueueOrderProducer:
                 ic(total_amount_paid, total_ord_cost, outstanding_amount, outstanding_status)
 
 
+                cust_info = datas.get("customers") or order_payload.get("customer") or {}
+                cust_name = (
+                    (cust_info.get("name") if isinstance(cust_info, dict) else None)
+                    or (cust_info.get("customer_name") if isinstance(cust_info, dict) else None)
+                    or order_payload.get("customer_name")
+                    or order_payload.get("name")
+                )
+
                 read_db_order_payload = {
                     "id": order_id,
                     "ui_id": ui_id,
                     "shop_id": shop_id,
                     "customer_id": customer_id,
+                    "customer_name": cust_name,
+                    "customer": cust_info if isinstance(cust_info, dict) and cust_info else (
+                        {"customer_id": customer_id, "name": cust_name} if (customer_id or cust_name) else None
+                    ),
                     "status": status,
                     "origin": origin,
+                    "delivery_fee": float(
+                        calculation_infos.get("delivery_fee")
+                        or calculation_infos.get("delivery_charge")
+                        or (charges_infos.get("delivery_charge") if isinstance(charges_infos, dict) else 0.0)
+                        or (charges_infos.get("delivery_fee") if isinstance(charges_infos, dict) else 0.0)
+                        or order_payload.get("delivery_fee")
+                        or order_payload.get("delivery_charge")
+                        or 0.0
+                    ),
+                    "total_quantity": float(item_infos.get("total_order_qty") or sum(float(i.get("quantity", 1)) for i in read_items) or 1.0),
                     "calculation_infos": calculation_infos or {},
                     "charges_infos": charges_infos or {},
                     "item_infos": item_infos or {},
@@ -514,6 +545,8 @@ class MessagingQueueOrderProducer:
                         "outstanding_infos": {"amount": float(on_credit_amt)},
                         "type": "INCREMENT",
                         "cleared_amount": float(non_credit_paid),
+                        "paid_amount": float(non_credit_paid),
+                        "invoice_outstanding": float(on_credit_amt),
                         "total_amount": float(total_ord_cost),
                         "entity_name": "order",
                         "entity_id": str(ui_id or order_id),
@@ -561,19 +594,34 @@ class MessagingQueueOrderProducer:
                     try:
                         effective_ui_id = ui_id or f"Order #{order_id[:8]}"
                         order_name = effective_ui_id
+                        
+                        is_online_order = bool(str(origin).upper() in ("ONLINE", "DIGITAL_STORE")) or origin == OrderOriginEnum.ONLINE.value
+                        cust_name = order_payload.get("name") or order_payload.get("customer_name") or "Online Customer"
+                        
+                        if is_online_order:
+                            log_user_info = {
+                                "user_name": f"{cust_name} (Online Store)",
+                                "user_email": order_payload.get("email") or "",
+                                "user_role": "Customer"
+                            }
+                            log_desc = f"Online Order Placed: {order_name} ({effective_ui_id}) by {cust_name}"
+                        else:
+                            log_user_info = get_activity_log_user_info(datas.get("user_infos") or datas.get("user_info") or current_user_ctx.get())
+                            log_desc = f"Created Order {order_name} ({effective_ui_id})"
+
                         rabbitmq_msg_obj = RabbitMQMessagingConfig()
                         await rabbitmq_msg_obj.publish_event(
                             routing_key="activity_logs.routing.key",
                             exchange_name="activity_logs.exchange",
                             payload={
                                 "shop_id": shop_id,
-                                **get_activity_log_user_info(datas.get("user_infos") or datas.get("user_info") or current_user_ctx.get()),
+                                **log_user_info,
                                 "service": "Order",
                                 "action": "CREATED",
                                 "entity_type": "ORDER",
                                 "entity_id": str(effective_ui_id),
                                 "entity_name": str(order_name),
-                                "description": f"Created Order {order_name} ({effective_ui_id})",
+                                "description": log_desc,
                                 "changes": []
                             },
                             headers={}
@@ -588,20 +636,55 @@ class MessagingQueueOrderProducer:
                     from helpers.emit_notification import emit_notification
                     import asyncio
                     executing_user_id = datas.get("executing_user_id")
-                    is_online = bool(str(origin).upper() in ("ONLINE", "DIGITAL_STORE"))
+                    is_online = bool(str(origin).upper() in ("ONLINE", "DIGITAL_STORE")) or origin == OrderOriginEnum.ONLINE.value
+                    
+                    # 1. Send notification to the shop so it appears in the shop's notifications & live alert
+                    shop_notif_title = "New Online Order Received!" if is_online else "New Order Placed"
+                    shop_notif_message = (
+                        f"New online order '{ui_id}' received from {cust_name} for ₹{float(total_ord_cost):.2f}."
+                        if is_online else
+                        f"Order '{ui_id}' has been successfully placed (Total: ₹{float(total_ord_cost):.2f})."
+                    )
+                    
                     asyncio.create_task(emit_notification(
-                        title="Online Order Placed" if is_online else "Order Placed",
-                        message=f"{'Online order' if is_online else 'Order'} '{ui_id}' has been successfully placed.",
-                        type="info",
-                        user_id=executing_user_id or shop_id,
+                        title=shop_notif_title,
+                        message=shop_notif_message,
+                        type="success" if is_online else "info",
+                        user_id=shop_id,
+                        user_ids=[shop_id],
+                        target_type="particular",
                         additional_metadata={
+                            "shop_id": shop_id,
                             "order_id": order_id,
+                            "ui_id": str(ui_id),
                             "origin": origin,
                             "is_online": is_online,
                             "category": "digital_store" if is_online else "order",
-                            "channel": "digital_store" if is_online else "pos"
+                            "channel": "digital_store" if is_online else "pos",
+                            "total_amount": float(total_ord_cost),
+                            "customer_name": cust_name,
+                            "customer_id": customer_id
                         }
                     ))
+
+                    # 2. Also notify executing customer if distinct from shop
+                    if executing_user_id and executing_user_id != shop_id:
+                        asyncio.create_task(emit_notification(
+                            title="Order Placed Successfully",
+                            message=f"Your {'online order' if is_online else 'order'} '{ui_id}' has been placed successfully.",
+                            type="info",
+                            user_id=executing_user_id,
+                            target_type="particular",
+                            additional_metadata={
+                                "shop_id": shop_id,
+                                "order_id": order_id,
+                                "ui_id": str(ui_id),
+                                "origin": origin,
+                                "is_online": is_online,
+                                "category": "digital_store" if is_online else "order",
+                                "channel": "digital_store" if is_online else "pos"
+                            }
+                        ))
                 except Exception as notification_error:
                     ic(f"Notification error: {notification_error}")
 

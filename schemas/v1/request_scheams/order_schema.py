@@ -241,6 +241,27 @@ class CreateReturnSchema(BaseModel):
     payment_infos:dict
     items: List[ReturnItemRequestSchema]
 
+class CustomerReturnItemSchema(BaseModel):
+    order_item_id: Optional[str] = None
+    product_id: Optional[str] = None
+    quantity: Optional[float] = None
+    unit: Optional[str] = None
+    reason: Optional[str] = None
+
+class CreateReturnRequestSchema(BaseModel):
+    order_id: str
+    shop_id: Optional[str] = None
+    items: List[CustomerReturnItemSchema]
+    description: str
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    customer_email: Optional[str] = None
+    customer_id: Optional[str] = None
+
+class UpdateReturnRequestStatusSchema(BaseModel):
+    status: str
+    admin_notes: Optional[str] = None
+
 class ExchangeItemSchema(BaseModel):
     """Item the customer is returning (exchanging OUT)"""
     order_item_id: str             # the original order item ID being exchanged

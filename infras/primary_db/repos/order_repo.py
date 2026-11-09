@@ -562,6 +562,8 @@ class OrdersRepo(BaseRepoModel):
                     "serialno_infos": item.serialno_infos,
                     "gst": item.gst,
                     "quantity": item.quantity,
+                    "entered_qty": getattr(item, 'entered_qty', None),
+                    "entered_unit": getattr(item, 'entered_unit', None),
                     "buy_price": item.buy_price,
                     "sell_price": item.sell_price,
                     "additional_infos": item.additional_infos,
@@ -700,12 +702,18 @@ class OrdersRepo(BaseRepoModel):
         if order is None:
             return None
 
+        cust_name = None
+        if order.additional_infos and isinstance(order.additional_infos, dict):
+            cust_name = order.additional_infos.get("customer_name") or order.additional_infos.get("name")
+
         response = {
             "id": order.id,
             "sequence_id": order.sequence_id,
             "ui_id": order.ui_id,
             "shop_id": order.shop_id,
             "customer_id": order.customer_id,
+            "customer_name": cust_name,
+            "customer": {"customer_id": order.customer_id, "name": cust_name} if (order.customer_id or cust_name) else None,
             "status": order.status,
             "origin": order.origin,
             "calculation_infos": order.calculation_infos,
@@ -737,6 +745,8 @@ class OrdersRepo(BaseRepoModel):
                 "serialno_infos": item.serialno_infos,
                 "gst": item.gst,
                 "quantity": item.quantity,
+                "entered_qty": getattr(item, 'entered_qty', None),
+                "entered_unit": getattr(item, 'entered_unit', None),
                 "buy_price": item.buy_price,
                 "sell_price": item.sell_price,
                 "additional_infos": item.additional_infos,
@@ -942,6 +952,8 @@ class OrdersRepo(BaseRepoModel):
                     "serialno_infos": item.serialno_infos,
                     "gst": item.gst,
                     "quantity": item.quantity,
+                    "entered_qty": getattr(item, 'entered_qty', None),
+                    "entered_unit": getattr(item, 'entered_unit', None),
                     "buy_price": item.buy_price,
                     "sell_price": item.sell_price,
                     "additional_infos": item.additional_infos,

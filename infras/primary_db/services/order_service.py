@@ -351,6 +351,9 @@ class OrdersService:
             if order_data:
                 await OrderReadDbRepo.replace_order(data=dict(order_data))
 
+            if new_status in ("DELIVERED", "COMPLETED"):
+                await OrderReadDbRepo.settle_delivered_order_payment(order_id=data.id, shop_id=data.shop_id)
+
             try:
                 from messaging.main import RabbitMQMessagingConfig
                 rabbitmq_msg_obj = RabbitMQMessagingConfig()

@@ -42,6 +42,8 @@ class OrderCreateResponseSchema(BaseModel):
     id:str
     ui_id:Union[str, int]
     shop_id:str
+    customer_id:Optional[str]=None
+    customer_name:Optional[str]=None
     customer:Optional[dict]=None
     status:OrderStatusEnum
     type:str
@@ -53,6 +55,11 @@ class OrderCreateResponseSchema(BaseModel):
     total_sellprice:float
     origin:OrderOriginEnum
 
+    calculation_infos:Optional[dict]=None
+    charges_infos:Optional[dict]=None
+    delivery_fee:Optional[float]=None
+    additional_infos:Optional[dict]=None
+    online_details:Optional[dict]=None
     created_at:datetime
     updated_at:datetime
 
@@ -63,6 +70,8 @@ class OrderUpdateResponseSchema(BaseModel):
     id:str
     ui_id:Union[str, int]
     shop_id:str
+    customer_id:Optional[str]=None
+    customer_name:Optional[str]=None
     customer:Optional[dict]=None
     type:str
     payments:Dict[OrderPaymentEnums,float]
@@ -74,6 +83,11 @@ class OrderUpdateResponseSchema(BaseModel):
     status:OrderStatusEnum
     origin:OrderOriginEnum
 
+    calculation_infos:Optional[dict]=None
+    charges_infos:Optional[dict]=None
+    delivery_fee:Optional[float]=None
+    additional_infos:Optional[dict]=None
+    online_details:Optional[dict]=None
     created_at:datetime
     updated_at:datetime
 
@@ -85,6 +99,8 @@ class OrderDeleteResponseSchema(BaseModel):
     type:str
     payments:Dict[OrderPaymentEnums,float]
     datas:Optional[dict]=None
+    customer_id:Optional[str]=None
+    customer_name:Optional[str]=None
     customer:Optional[dict]=None
     total_quantity:float
     
@@ -93,6 +109,11 @@ class OrderDeleteResponseSchema(BaseModel):
     status:OrderStatusEnum
     origin:OrderOriginEnum
 
+    calculation_infos:Optional[dict]=None
+    charges_infos:Optional[dict]=None
+    delivery_fee:Optional[float]=None
+    additional_infos:Optional[dict]=None
+    online_details:Optional[dict]=None
     created_at:datetime
     updated_at:datetime
 
@@ -104,6 +125,8 @@ class ReplacementOrderResponseSchema(BaseModel):
     origin: str
     status: str
     customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer: Optional[dict] = None
     total_buyprice: float = 0.0
     total_sellprice: float = 0.0
     total_quantity: float = 0.0
@@ -129,6 +152,8 @@ class OrderGetResponseSchema(BaseModel):
     datas:Optional[dict]=None
     total_buyprice:float
     total_sellprice:float
+    customer_id:Optional[str]=None
+    customer_name:Optional[str]=None
     customer:Optional[dict]=None
     status:OrderStatusEnum
     origin:OrderOriginEnum
@@ -136,6 +161,11 @@ class OrderGetResponseSchema(BaseModel):
     returns:Optional[List[dict]]=None
     exchanged_items:Optional[List[ExchangedItemResponseSchema]]=None
 
+    calculation_infos:Optional[dict]=None
+    charges_infos:Optional[dict]=None
+    delivery_fee:Optional[float]=None
+    additional_infos:Optional[dict]=None
+    online_details:Optional[dict]=None
     created_at:datetime
     updated_at:datetime
 

@@ -52,10 +52,14 @@ class ReplacementOrderReadModel(BaseModel):
     origin: str
     status: str
     customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer: Optional[dict] = None
     type: Optional[str] = None
 
     calculation_infos: dict = {}
     charges_infos: dict = {}
+    delivery_fee: Optional[float] = 0.0
+    total_quantity: Optional[float] = 0.0
     item_infos: dict = {}
     payment_infos: Union[dict, list] = {}
     date: Optional[datetime] = None
@@ -77,6 +81,7 @@ class OrderReadModel(BaseModel):
     ui_id: Optional[str] = None
     shop_id: str
     customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
     customer: Optional[dict] = None
     
     status: str
@@ -85,6 +90,8 @@ class OrderReadModel(BaseModel):
     
     calculation_infos: dict = {}
     charges_infos: dict = {}
+    delivery_fee: Optional[float] = 0.0
+    total_quantity: Optional[float] = 0.0
     item_infos: dict = {}
     payment_infos: Union[dict, list] = {}
     date: Optional[datetime] = None
@@ -107,12 +114,47 @@ class OrderReadModel(BaseModel):
             return values
             
         datas = values.get('datas') or {}
-        customer_id = values.get('customer_id')
-        
+        cust_obj = values.get('customer') if isinstance(values.get('customer'), dict) else {}
+        online_obj = values.get('online_details') if isinstance(values.get('online_details'), dict) else {}
+
+        customer_id = (
+            values.get('customer_id') or
+            cust_obj.get('customer_id') or
+            cust_obj.get('id') or
+            datas.get('customer_id')
+        )
+        customer_name = (
+            values.get('customer_name') or
+            cust_obj.get('name') or
+            cust_obj.get('customer_name') or
+            online_obj.get('name') or
+            datas.get('customer_name') or
+            datas.get('name')
+        )
+
+        if customer_id:
+            values['customer_id'] = str(customer_id)
+        if customer_name:
+            values['customer_name'] = str(customer_name)
+
         if not values.get('customer'):
-            if 'customer' in datas:
+            if 'customer' in datas and isinstance(datas['customer'], dict):
                 values['customer'] = datas['customer']
-            elif customer_id:
-                values['customer'] = {'customer_id': customer_id}
+            elif customer_id or customer_name:
+                cust_dict = {}
+                if customer_id:
+                    cust_dict['customer_id'] = str(customer_id)
+                    cust_dict['id'] = str(customer_id)
+                if customer_name:
+                    cust_dict['name'] = str(customer_name)
+                    cust_dict['customer_name'] = str(customer_name)
+                values['customer'] = cust_dict
+        elif isinstance(values.get('customer'), dict):
+            c_dict = dict(values['customer'])
+            if customer_id and not c_dict.get('customer_id') and not c_dict.get('id'):
+                c_dict['customer_id'] = str(customer_id)
+            if customer_name and not c_dict.get('name') and not c_dict.get('customer_name'):
+                c_dict['name'] = str(customer_name)
+            values['customer'] = c_dict
                 
         return values

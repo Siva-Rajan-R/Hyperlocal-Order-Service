@@ -320,8 +320,8 @@ class OrderReadDbRepo:
 
             existing_doc = await ORDERS_COLLECTION.find_one({"id": structured_data["id"]})
             if existing_doc:
-                for key in ["calculation_infos", "charges_infos", "item_infos", "additional_infos", "online_details", "payment_infos"]:
-                    if not structured_data.get(key) and existing_doc.get(key):
+                for key in ["calculation_infos", "charges_infos", "item_infos", "additional_infos", "online_details", "payment_infos", "payment_status", "pending_amount"]:
+                    if structured_data.get(key) is None and existing_doc.get(key) is not None:
                         structured_data[key] = existing_doc[key]
 
                 for key in ["returns", "exchanges"]:
@@ -363,6 +363,15 @@ class OrderReadDbRepo:
 
                 structured_data["items"] = final_merged_items
 
+            # If order is delivered or completed, automatically settle online order payments
+            curr_status = str(structured_data.get("status") or (existing_doc and existing_doc.get("status")) or "").upper()
+            if curr_status in ("DELIVERED", "COMPLETED"):
+                orig = str(structured_data.get("origin") or (existing_doc and existing_doc.get("origin")) or "").upper()
+                is_online = ("ONLINE" in orig) or ("DIGITAL" in orig) or bool(structured_data.get("online_details") or (existing_doc and existing_doc.get("online_details")))
+                if is_online:
+                    structured_data["payment_status"] = "PAID"
+                    structured_data["pending_amount"] = 0.0
+
             res = await ORDERS_COLLECTION.replace_one(
                 {"id": structured_data["id"]},
                 structured_data,
@@ -380,6 +389,18 @@ class OrderReadDbRepo:
             return bool(res.acknowledged)
         except Exception as e:
             ic(f"Error replacing order in Read DB: {e}")
+            return False
+
+    @classmethod
+    async def settle_delivered_order_payment(cls, order_id: str, shop_id: str):
+        try:
+            res = await ORDERS_COLLECTION.update_one(
+                {"id": order_id, "shop_id": shop_id},
+                {"$set": {"payment_status": "PAID", "pending_amount": 0.0}}
+            )
+            return bool(res.acknowledged)
+        except Exception as e:
+            ic(f"Error settling order payment in Read DB: {e}")
             return False
 
     @classmethod
@@ -402,12 +423,99 @@ class OrderReadDbRepo:
             return []
 
     @classmethod
+    def _normalize_customer_fields(cls, doc: dict) -> dict:
+        if not isinstance(doc, dict):
+            return doc
+        cust = doc.get("customer") if isinstance(doc.get("customer"), dict) else {}
+        online = doc.get("online_details") if isinstance(doc.get("online_details"), dict) else {}
+        datas = doc.get("datas") if isinstance(doc.get("datas"), dict) else {}
+
+        cid = doc.get("customer_id") or cust.get("customer_id") or cust.get("id") or datas.get("customer_id")
+        cname = (
+            doc.get("customer_name") or
+            cust.get("name") or
+            cust.get("customer_name") or
+            online.get("name") or
+            online.get("customer_name") or
+            datas.get("customer_name") or
+            datas.get("name")
+        )
+
+        if cid:
+            doc["customer_id"] = str(cid)
+        if cname:
+            doc["customer_name"] = str(cname)
+
+        if not doc.get("customer"):
+            if cid or cname:
+                doc["customer"] = {
+                    k: v for k, v in [
+                        ("customer_id", str(cid) if cid else None),
+                        ("id", str(cid) if cid else None),
+                        ("name", str(cname) if cname else None),
+                        ("customer_name", str(cname) if cname else None)
+                    ] if v
+                }
+        else:
+            c_dict = dict(doc["customer"])
+            if cid and not c_dict.get("customer_id") and not c_dict.get("id"):
+                c_dict["customer_id"] = str(cid)
+            if cname and not c_dict.get("name") and not c_dict.get("customer_name"):
+                c_dict["name"] = str(cname)
+            doc["customer"] = c_dict
+
+        # Extract and normalize delivery_fee
+        calc = doc.get("calculation_infos") if isinstance(doc.get("calculation_infos"), dict) else {}
+        charges = doc.get("charges_infos") if isinstance(doc.get("charges_infos"), dict) else {}
+        addl = doc.get("additional_infos") if isinstance(doc.get("additional_infos"), dict) else {}
+        deliv = (
+            doc.get("delivery_fee") or
+            doc.get("delivery_charge") or
+            calc.get("delivery_fee") or
+            calc.get("delivery_charge") or
+            charges.get("delivery_charge") or
+            charges.get("delivery_fee") or
+            addl.get("delivery_charge") or
+            addl.get("delivery_fee") or
+            online.get("delivery_fee") or
+            online.get("delivery_charge") or
+            0.0
+        )
+        try:
+            doc["delivery_fee"] = float(deliv)
+        except (ValueError, TypeError):
+            doc["delivery_fee"] = 0.0
+
+        # Extract and normalize total_quantity
+        items = doc.get("items") or []
+        item_infos = doc.get("item_infos") if isinstance(doc.get("item_infos"), dict) else {}
+
+        t_qty = (
+            doc.get("total_quantity") or
+            item_infos.get("total_order_qty") or
+            item_infos.get("total_order_quantity") or
+            calc.get("total_quantity") or
+            calc.get("total_qty")
+        )
+        if (t_qty is None or float(t_qty or 0.0) <= 0.0) and isinstance(items, list) and len(items) > 0:
+            calc_sum = sum(float(i.get("quantity") or i.get("qty") or i.get("entered_qty") or 1.0) for i in items if isinstance(i, dict))
+            t_qty = calc_sum if calc_sum > 0 else float(len(items))
+
+        try:
+            doc["total_quantity"] = float(t_qty or 0.0)
+        except (ValueError, TypeError):
+            doc["total_quantity"] = float(len(items)) if isinstance(items, list) and len(items) > 0 else 0.0
+
+        return doc
+
+    @classmethod
     async def get_by_id(cls, shop_id: str, order_id: str) -> Optional[dict]:
         try:
-            return await ORDERS_COLLECTION.find_one(
+            res = await ORDERS_COLLECTION.find_one(
                 {"shop_id": shop_id, "id": order_id},
                 {"_id": 0}
             )
+            return cls._normalize_customer_fields(res) if res else None
         except Exception as e:
             ic(f"Error in get_by_id: {e}")
             return None
@@ -487,6 +595,7 @@ class OrderReadDbRepo:
 
             cursor = ORDERS_COLLECTION.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(data.limit)
             orders = await cursor.to_list(length=data.limit)
+            orders = [cls._normalize_customer_fields(o) for o in orders]
 
             if data.offset in (0, 1):
                 overall_values = await cls.get_overall_values(query)
@@ -517,6 +626,7 @@ class OrderReadDbRepo:
 
             cursor = ORDERS_COLLECTION.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(data.limit)
             orders = await cursor.to_list(length=data.limit)
+            orders = [cls._normalize_customer_fields(o) for o in orders]
 
             if data.offset in (0, 1):
                 overall_values = await cls.get_overall_values(query)

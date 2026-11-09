@@ -25,9 +25,14 @@ class OrderCartCacheModel:
             if cart[i].get('product_id') == item.get('product_id') and \
                cart[i].get('variant_id') == item.get('variant_id') and \
                cart[i].get('batch_id') == item.get('batch_id'):
-                # Update quantity
+                # Update item details including quantity, unit and serial numbers
+                cart[i].update(item)
                 cart[i]['qty'] = item.get('qty', 0)
-                cart[i]['serialno_infos']=item.get("serialno_infos",[])
+                cart[i]['serialno_infos'] = item.get("serialno_infos", [])
+                if 'entered_qty' in item:
+                    cart[i]['entered_qty'] = item.get('entered_qty')
+                if 'entered_unit' in item:
+                    cart[i]['entered_unit'] = item.get('entered_unit')
                 found = True
                 break
                 
