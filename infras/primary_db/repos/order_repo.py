@@ -264,7 +264,15 @@ class OrdersRepo(BaseRepoModel):
             else:
                 conds.append(func.lower(Orders.origin) == origin_val)
         if hasattr(data, 'payment_method') and getattr(data, 'payment_method'):
-            conds.append(func.cast(Orders.payment_infos, String).ilike(f"%{data.payment_method.upper()}%"))
+            pm_val = str(data.payment_method).strip().upper()
+            if pm_val in ("ON CREDIT", "ON_CREDIT", "CREDIT"):
+                conds.append(or_(
+                    func.cast(Orders.payment_infos, String).ilike("%CREDIT%"),
+                    Orders.payment_status.in_(["NOT-PAID", "PARTIALY-PAID", "NOT_PAID", "UNPAID"]),
+                    Orders.pending_amount > 0
+                ))
+            else:
+                conds.append(func.cast(Orders.payment_infos, String).ilike(f"%{pm_val}%"))
 
         # Exclusion filters for online / offline
         ex_online = is_exclude_online(data) or (getattr(data, 'online_only', None) is False)

@@ -226,13 +226,42 @@ class OrderReadDbRepo:
         # --- payment_method ---
         payment_method = getattr(data, "payment_method", None)
         if payment_method:
-            pm = str(payment_method).upper()
-            and_clauses.append({
-                "$or": [
-                    {f"payment_infos.{pm}": {"$exists": True}},
-                    {"payment_infos": {"$elemMatch": {"mode": re.compile(f"^{re.escape(pm)}$", re.IGNORECASE)}}},
-                ]
-            })
+            pm = str(payment_method).strip().upper()
+            if pm in ("ON CREDIT", "ON_CREDIT", "CREDIT"):
+                credit_regex = re.compile(r"credit", re.IGNORECASE)
+                and_clauses.append({
+                    "$or": [
+                        {"payment_infos.ON_CREDIT": {"$exists": True}},
+                        {"payment_infos.CREDIT": {"$exists": True}},
+                        {"payment_infos.on_credit": {"$exists": True}},
+                        {"payment_infos.credit": {"$exists": True}},
+                        {"payment_infos.On Credit": {"$exists": True}},
+                        {"payment_infos": {"$elemMatch": {"$or": [
+                            {"mode": credit_regex},
+                            {"method": credit_regex},
+                            {"ON_CREDIT": {"$exists": True}},
+                            {"CREDIT": {"$exists": True}}
+                        ]}}},
+                        {"payment_method": credit_regex},
+                        {"pending_amount": {"$gt": 0}},
+                        {"payment_status": {"$in": ["NOT-PAID", "not-paid", "NOT_PAID", "not_paid", "PARTIAL", "partial", "PARTIALY-PAID", "partially-paid"]}}
+                    ]
+                })
+            else:
+                pm_regex = re.compile(f"^{re.escape(pm)}$", re.IGNORECASE)
+                and_clauses.append({
+                    "$or": [
+                        {f"payment_infos.{pm}": {"$exists": True}},
+                        {f"payment_infos.{pm.capitalize()}": {"$exists": True}},
+                        {f"payment_infos.{pm.lower()}": {"$exists": True}},
+                        {"payment_infos": {"$elemMatch": {"$or": [
+                            {"mode": pm_regex},
+                            {"method": pm_regex},
+                            {pm: {"$exists": True}}
+                        ]}}},
+                        {"payment_method": pm_regex}
+                    ]
+                })
 
         # --- payment_status (via pending_amount field stored in MongoDB) ---
         payment_status_filter = getattr(data, "payment_status", None)

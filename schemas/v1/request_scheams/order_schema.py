@@ -70,7 +70,7 @@ class VerifyDeliverySchema(BaseModel):
 class GetAllOrderSchema(BaseModel):
     shop_id:Optional[str]=None
     query:Optional[str]=Field(default="",alias='q')
-    limit:Optional[int]=Field(default=10,le=100)
+    limit:Optional[int]=Field(default=10,le=5000)
     offset:int=Field(default=1)
     timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata
     from_date:Optional[str]=None
@@ -120,7 +120,7 @@ class GetAllOrderSchema(BaseModel):
 class GetOrderByShopIdSchema(BaseModel):
     shop_id:str
     query:Optional[str]=Field(default="",alias='q')
-    limit:Optional[int]=Field(default=10,le=100)
+    limit:Optional[int]=Field(default=10,le=5000)
     offset:int=Field(default=1)
     timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata
     from_date:Optional[str]=None
@@ -171,7 +171,7 @@ class GetOrderByCustomerIdSchema(BaseModel):
     shop_id:str
     customer_id:str
     query:Optional[str]=Field(default="",alias='q')
-    limit:Optional[int]=Field(default=10,le=100)
+    limit:Optional[int]=Field(default=10,le=5000)
     offset:int=Field(default=1)
     timezone:Optional[TimeZoneEnum]=TimeZoneEnum.Asia_Kolkata
     from_date:Optional[str]=None

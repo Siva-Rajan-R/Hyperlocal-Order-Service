@@ -150,7 +150,18 @@ class MessagingQueueOrderProducer:
                 shop_infos = await get_shop_info(shop_id=shop_id)
                 shop_gst_registered = False
                 if shop_infos:
-                    shop_gst_registered = (shop_infos.get("business_infos") or {}).get("gst_infos", {}).get("registered", False)
+                    biz_infos = shop_infos.get("business_infos") or {}
+                    gst_infos = biz_infos.get("gst_infos") or {}
+                    shop_gst_registered = bool(
+                        gst_infos.get("registered") or
+                        gst_infos.get("number") or
+                        biz_infos.get("gstin") or
+                        biz_infos.get("gst_number") or
+                        shop_infos.get("gstin") or
+                        shop_infos.get("gst_number")
+                    )
+                else:
+                    shop_gst_registered = True
                 ic(shop_gst_registered)
 
                 product_res = datas.get("products") or []
@@ -179,8 +190,10 @@ class MessagingQueueOrderProducer:
                         has_batch = type_infos.get('has_batch', False)
                         has_serialno = type_infos.get('has_serialno', False)
                         
-                        # Set GST to 0% if shop is not GST registered
-                        product_gst = prod_db.get('gst', '0%')
+                        # Set GST from product or shop registration
+                        product_gst = prod_db.get('gst') or prod_db.get('gst_rate') or prod_db.get('tax_rate') or '0%'
+                        if isinstance(product_gst, (int, float)):
+                            product_gst = f"{product_gst}%"
                         gst = product_gst if shop_gst_registered else '0%'
 
                         category_infos=prod_db.get('category_infos') or {}
@@ -270,6 +283,14 @@ class MessagingQueueOrderProducer:
                             else:
                                 sell_price_val = float(pricing_infos.get('sell_price', 0))
                             
+                            # Check incoming item GST override if product has 0%
+                            incoming_gst = itm.get('gst') or itm.get('gst_rate')
+                            if incoming_gst and (gst == '0%' or not gst):
+                                if isinstance(incoming_gst, (int, float)) and incoming_gst > 0:
+                                    gst = f"{incoming_gst}%"
+                                elif isinstance(incoming_gst, str) and incoming_gst != '0%':
+                                    gst = incoming_gst
+
                             # Parse GST percentage to raw rate
                             gst_val = gst.replace('%', '').strip() if isinstance(gst, str) else '0'
                             try:
@@ -277,11 +298,11 @@ class MessagingQueueOrderProducer:
                             except ValueError:
                                 gst_rate = 0.0
                             
-                            # Selling price is always INCLUSIVE of GST (e.g. 100 SP with 18% GST = 84.75 base + 15.25 GST)
+                            # Selling price is always INCLUSIVE of GST (e.g. 100 SP with 18% GST -> 18.0 GST + 82.0 base)
                             inclusive_unit_price = sell_price_val
                             if gst_rate > 0:
-                                taxable_unit = round(inclusive_unit_price / (1.0 + gst_rate), 2)
-                                gst_amount = round(inclusive_unit_price - taxable_unit, 2)
+                                gst_amount = round(inclusive_unit_price * gst_rate, 2)
+                                taxable_unit = round(inclusive_unit_price - gst_amount, 2)
                             else:
                                 taxable_unit = inclusive_unit_price
                                 gst_amount = 0.0
