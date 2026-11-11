@@ -44,6 +44,26 @@ async def create_return_request(
     )
 
 
+@router.get('/requests/user/{user_id}')
+async def get_user_return_requests(
+    user_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(1, ge=1)
+):
+    """
+    Fetch return requests for a specific authenticated customer.
+    """
+    res = await ReturnRequestRepo.get_by_user_id(user_id=user_id, limit=limit, offset=offset)
+    return SuccessResponseTypDict(
+        detail=BaseResponseTypDict(
+            status_code=200,
+            msg="User return requests fetched successfully",
+            success=True
+        ),
+        data=res
+    )
+
+
 @router.get('/requests/{shop_id}')
 async def get_shop_return_requests(
     shop_id: str,

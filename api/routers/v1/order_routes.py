@@ -24,7 +24,8 @@ async def create(data:CreateOrderSchema,session:PG_SESSION,user_id: Optional[str
 @router.put('/status')
 async def update_status(data:UpdateOrderStatusSchema,session:PG_SESSION,request: Request,user_id: Optional[str] = Depends(get_current_user_id)):
     user_info = await get_current_user_info(request=request)
-    return await HandleOrderRequest(session=session,shop_id=getattr(data, "shop_id", SHOP_ID) or SHOP_ID,cur_user_id=user_id or "",cur_user_info=user_info).update(data=data)
+    request_origin = (request.headers.get("x-origin") or request.headers.get("x-app-origin") or "").strip().lower()
+    return await HandleOrderRequest(session=session,shop_id=getattr(data, "shop_id", SHOP_ID) or SHOP_ID,cur_user_id=user_id or "",cur_user_info=user_info,request_origin=request_origin).update(data=data)
 
 from schemas.v1.request_scheams.order_schema import VerifyDeliverySchema, CreateReturnRequestSchema, UpdateReturnRequestStatusSchema
 from infras.read_db.repos.return_request_repo import ReturnRequestRepo
@@ -42,6 +43,22 @@ async def create_online_return_request(
         detail=BaseResponseTypDict(
             status_code=201,
             msg="Return request submitted successfully",
+            success=True
+        ),
+        data=res
+    )
+
+@router.get('/return-requests/by/user/{user_id}')
+async def get_user_order_return_requests(
+    user_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(1, ge=1)
+):
+    res = await ReturnRequestRepo.get_by_user_id(user_id=user_id, limit=limit, offset=offset)
+    return SuccessResponseTypDict(
+        detail=BaseResponseTypDict(
+            status_code=200,
+            msg="User return requests fetched successfully",
             success=True
         ),
         data=res

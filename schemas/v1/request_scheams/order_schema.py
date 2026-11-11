@@ -1,4 +1,4 @@
-from pydantic import BaseModel,Field
+from pydantic import BaseModel, Field, field_validator
 from core.data_formats.enums.order_enum import OrderStatusEnum,OrderOriginEnum,OrderReturnTypeEnum,OrderPaymentEnums
 from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
 from typing import Optional,List,Dict
@@ -299,6 +299,16 @@ class UpdateOrderStatusSchema(BaseModel):
     status: Optional[OrderStatusEnum] = None
     payment_infos: Optional[dict] = None
     additional_infos: Optional[dict] = None
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_status(cls, v):
+        if isinstance(v, str):
+            norm = v.strip().upper()
+            if norm == "CANCELLED":
+                return "CANCELED"
+            return norm
+        return v
 
 class GetBulkOrdersSchema(BaseModel):
     shop_id: str

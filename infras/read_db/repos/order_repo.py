@@ -353,7 +353,7 @@ class OrderReadDbRepo:
                     if structured_data.get(key) is None and existing_doc.get(key) is not None:
                         structured_data[key] = existing_doc[key]
 
-                for key in ["returns", "exchanges"]:
+                for key in ["returns", "exchanges", "return_requests"]:
                     old_arr = existing_doc.get(key) or []
                     new_arr = structured_data.get(key) or []
                     merged_dict = {x["id"]: x for x in old_arr if "id" in x}

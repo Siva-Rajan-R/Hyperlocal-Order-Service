@@ -176,7 +176,7 @@ class OrdersService:
         }
     
 
-    async def update(self, data: UpdateOrderStatusSchema, executing_user_id: Optional[str] = None, executing_user_info: Optional[dict] = None):
+    async def update(self, data: UpdateOrderStatusSchema, executing_user_id: Optional[str] = None, executing_user_info: Optional[dict] = None, request_origin: str = ""):
         # 1. Resolve executing user information
         u_info = executing_user_info or {}
         if not u_info:
@@ -207,18 +207,57 @@ class OrdersService:
         new_status = (data.status.value if hasattr(data.status, "value") else str(data.status)).upper() if data.status else None
 
         # 3. Update status history and tracking in additional_infos
+        incoming_add = data.additional_infos if isinstance(data.additional_infos, dict) else {}
         existing_add = old_order_dict.get("additional_infos") or {}
         if not isinstance(existing_add, dict):
             existing_add = {}
         else:
             existing_add = dict(existing_add)
 
+        for k, v in incoming_add.items():
+            if v is not None:
+                existing_add[k] = v
+
+        cancelled_source = None
+        cancelled_actor = None
+        cancelled_via = None
+        if new_status in ("CANCELED", "CANCELLED", "REJECTED"):
+            raw_src = str(
+                incoming_add.get("cancelled_by_source")
+                or incoming_add.get("canceled_by_source")
+                or request_origin
+                or ""
+            ).strip().upper()
+            raw_label = str(
+                incoming_add.get("cancelled_by")
+                or incoming_add.get("cancelled_by_label")
+                or ""
+            ).strip().upper()
+            role_upper = str(u_role or "").strip().upper()
+
+            is_customer_cancel = (
+                "DIGITAL" in raw_src
+                or "CUSTOMER" in raw_src
+                or "MOBILE" in raw_src
+                or raw_label == "CUSTOMER"
+                or ("DIGITALSTORE" in raw_label)
+                or (not raw_src and role_upper in ("USER", "CUSTOMER"))
+            )
+            if is_customer_cancel:
+                cancelled_source = "DIGITAL_STORE"
+                cancelled_actor = "Customer"
+                cancelled_via = "Cancelled by Customer"
+            else:
+                cancelled_source = "INVENTQ"
+                cancelled_actor = "InventQ"
+                cancelled_via = "Cancelled manually by InventQ"
+
         status_history = existing_add.get("status_history") or []
         if not isinstance(status_history, list):
             status_history = []
         
         from datetime import datetime, timezone
-        status_history.append({
+        history_entry = {
             "from_status": old_status,
             "to_status": new_status,
             "updated_by": user_display,
@@ -227,7 +266,12 @@ class OrdersService:
             "user_name": user_name,
             "user_role": u_role,
             "timestamp": datetime.now(timezone.utc).isoformat()
-        })
+        }
+        if cancelled_source:
+            history_entry["cancelled_by_source"] = cancelled_source
+            history_entry["cancelled_by"] = cancelled_actor
+            history_entry["cancelled_by_label"] = cancelled_via
+        status_history.append(history_entry)
         existing_add["status_history"] = status_history
         existing_add["status_updated_by"] = user_display
         if new_status in ("ACCEPTED", "ACCEPT"):
@@ -235,6 +279,10 @@ class OrdersService:
         elif new_status in ("CANCELED", "CANCELLED", "REJECTED"):
             existing_add["canceled_by"] = user_display
             existing_add["rejected_by"] = user_display
+            existing_add["cancelled_by"] = cancelled_actor
+            existing_add["cancelled_by_source"] = cancelled_source
+            existing_add["cancelled_by_label"] = cancelled_via
+            existing_add["cancelled_by_user"] = user_display
         elif new_status in ("OUT_FOR_DELIVERY", "OUT-FOR-DELIVERY", "OUT FOR DELIVERY"):
             existing_add["dispatched_by"] = user_display
         elif new_status in ("DELIVERED",):
@@ -353,6 +401,94 @@ class OrdersService:
 
             if new_status in ("DELIVERED", "COMPLETED"):
                 await OrderReadDbRepo.settle_delivered_order_payment(order_id=data.id, shop_id=data.shop_id)
+
+            # Dispatch order status change notification
+            if new_status and new_status != old_status:
+                try:
+                    from integrations.notification_service import send_notification
+                    from infras.read_db.main import ORDERS_COLLECTION as _READ_ORDERS_COL
+                    order_doc = dict(order_data) if order_data else old_order_dict
+                    order_ui_id = str(order_doc.get("ui_id") or old_order_dict.get("ui_id") or data.id)
+
+                    read_doc = None
+                    try:
+                        read_doc = await _READ_ORDERS_COL.find_one(
+                            {"id": data.id},
+                            {"_id": 0, "user_id": 1, "customer_id": 1, "online_details": 1, "additional_infos": 1, "origin": 1}
+                        )
+                    except Exception:
+                        read_doc = None
+
+                    online_d = (read_doc.get("online_details") if read_doc else None) or order_doc.get("online_details") or {}
+                    add_d = (read_doc.get("additional_infos") if read_doc else None) or existing_add or {}
+                    cust_user_id = (
+                        (read_doc.get("user_id") if read_doc else None)
+                        or order_doc.get("user_id")
+                        or online_d.get("user_id")
+                        or add_d.get("user_id")
+                        or (read_doc.get("customer_id") if read_doc else None)
+                        or order_doc.get("customer_id")
+                    )
+
+                    orig_val = (read_doc.get("origin") if read_doc else None) or order_doc.get("origin") or ""
+                    is_online_order = "ONLINE" in str(getattr(orig_val, "value", orig_val)).upper()
+
+                    if cust_user_id and is_online_order:
+                        cancel_detail_text = cancelled_via or "Cancelled"
+                        status_map = {
+                            "ACCEPTED": ("Order Accepted", f"Great news! Your order #{order_ui_id} has been accepted and will be prepared soon.", "success"),
+                            "CONFIRMED": ("Order Confirmed", f"Your order #{order_ui_id} has been confirmed by the store.", "success"),
+                            "PREPARING": ("Order Being Prepared", f"Your order #{order_ui_id} is currently being packed.", "info"),
+                            "PROCESSING": ("Order Processing", f"Your order #{order_ui_id} is being processed.", "info"),
+                            "OUT_FOR_DELIVERY": ("Order Out for Delivery!", f"Your order #{order_ui_id} is out for delivery.", "info"),
+                            "DELIVERED": ("Order Delivered!", f"Your order #{order_ui_id} has been delivered. Enjoy your purchase!", "success"),
+                            "COMPLETED": ("Order Completed!", f"Your order #{order_ui_id} is completed.", "success"),
+                            "CANCELED": ("Order Cancelled", f"Your order #{order_ui_id} status: {cancel_detail_text}.", "error"),
+                            "CANCELLED": ("Order Cancelled", f"Your order #{order_ui_id} status: {cancel_detail_text}.", "error"),
+                            "REJECTED": ("Order Rejected", f"Sorry, your order #{order_ui_id} was rejected by the store.", "error"),
+                        }
+                        title, msg, n_type = status_map.get(
+                            new_status,
+                            ("Order Status Updated", f"Your order #{order_ui_id} status changed to {new_status.replace('_', ' ').title()}.", "info"),
+                        )
+                        await send_notification(
+                            title=title,
+                            message=msg,
+                            notif_type=n_type,
+                            user_id=str(cust_user_id),
+                            user_ids=[str(cust_user_id)],
+                            additional_metadata={
+                                "event_type": "ORDER_STATUS",
+                                "audience": "customer",
+                                "shop_id": data.shop_id,
+                                "order_id": str(data.id),
+                                "order_ui_id": order_ui_id,
+                                "status": new_status,
+                                "old_status": old_status,
+                                **({"cancelled_by": cancelled_actor, "cancelled_by_source": cancelled_source, "cancelled_by_label": cancelled_via} if cancelled_source else {}),
+                            },
+                        )
+
+                    if new_status in ("CANCELED", "CANCELLED") and is_online_order and data.shop_id:
+                        await send_notification(
+                            title=f"Order #{order_ui_id} Cancelled",
+                            message=f"Online order #{order_ui_id} ({cancelled_via or 'Cancelled'}).",
+                            notif_type="warning",
+                            user_id=str(data.shop_id),
+                            user_ids=[str(data.shop_id)],
+                            additional_metadata={
+                                "event_type": "ORDER_STATUS",
+                                "audience": "shop",
+                                "shop_id": data.shop_id,
+                                "order_id": str(data.id),
+                                "order_ui_id": order_ui_id,
+                                "status": new_status,
+                                "target_shop": True,
+                                **({"cancelled_by": cancelled_actor, "cancelled_by_source": cancelled_source, "cancelled_by_label": cancelled_via} if cancelled_source else {}),
+                            },
+                        )
+                except Exception as ne:
+                    ic(f"Failed dispatching order status notification: {ne}")
 
             try:
                 from messaging.main import RabbitMQMessagingConfig

@@ -83,6 +83,13 @@ class ReturnRequestRepo:
                 detail=f"Order '{data.order_id}' not found."
             )
 
+        order_status = str(order.get("status") or "").strip().upper()
+        if order_status in ("CANCELED", "CANCELLED", "REFUNDED", "REJECTED"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Return requests cannot be created for orders with status '{order_status}'."
+            )
+
         # 2. Extract and index all items present in the order
         raw_items = order.get("items") or []
         calc_items = (order.get("calculation_infos") or {}).get("items") or []
@@ -262,7 +269,143 @@ class ReturnRequestRepo:
 
         # Return sanitized doc (without MongoDB _id)
         doc.pop("_id", None)
+
+        # Dispatch notifications (non-blocking / failure-tolerant)
+        try:
+            from integrations.notification_service import send_notification
+            item_names = ", ".join([str(i.get("product_name") or "Item") for i in enriched_items[:3]])
+            if len(enriched_items) > 3:
+                item_names += f" +{len(enriched_items) - 3} more"
+
+            await send_notification(
+                title=f"New Return Request #{order_ui_id}",
+                message=f"{customer_name} requested a return for {item_names}.",
+                notif_type="warning",
+                user_id=shop_id,
+                user_ids=[shop_id] if shop_id else [],
+                additional_metadata={
+                    "event_type": "RETURN_REQUEST_CREATED",
+                    "audience": "shop",
+                    "shop_id": shop_id,
+                    "order_id": order_id,
+                    "order_ui_id": order_ui_id,
+                    "request_id": request_id,
+                    "customer_id": customer_id,
+                    "customer_name": customer_name,
+                    "target_shop": True,
+                },
+            )
+
+            cust_target = (
+                online_details.get("user_id")
+                or order.get("user_id")
+                or customer_id
+            )
+            if cust_target and cust_target != shop_id:
+                await send_notification(
+                    title="Return Request Submitted",
+                    message=f"Your return request for Order #{order_ui_id} has been submitted and is pending review.",
+                    notif_type="info",
+                    user_id=str(cust_target),
+                    user_ids=[str(cust_target)],
+                    additional_metadata={
+                        "event_type": "RETURN_REQUEST_CREATED",
+                        "audience": "customer",
+                        "shop_id": shop_id,
+                        "order_id": order_id,
+                        "order_ui_id": order_ui_id,
+                        "request_id": request_id,
+                        "status": "PENDING",
+                    },
+                )
+        except Exception as ne:
+            ic(f"Failed sending return create notification: {ne}")
+
         return doc
+
+    @classmethod
+    async def get_by_user_id(
+        cls,
+        user_id: str,
+        limit: int = 50,
+        offset: int = 1,
+    ) -> List[Dict[str, Any]]:
+        if not user_id:
+            return []
+
+        orders_collection = cls.get_orders_collection()
+        return_requests_collection = cls.get_return_requests_collection()
+
+        try:
+            user_orders_cursor = orders_collection.find(
+                {
+                    "$or": [
+                        {"user_id": user_id},
+                        {"customer_id": user_id},
+                        {"online_details.user_id": user_id},
+                        {"additional_infos.user_id": user_id},
+                    ]
+                },
+                {"_id": 0, "id": 1, "ui_id": 1, "return_requests": 1, "shop_id": 1},
+            ).limit(500)
+            user_orders = await user_orders_cursor.to_list(length=500)
+        except Exception as e:
+            ic(f"Error looking up orders for user return requests: {e}")
+            user_orders = []
+
+        order_ids = []
+        order_ui_ids = []
+        embedded_requests: List[Dict[str, Any]] = []
+        for ord_doc in user_orders:
+            oid = ord_doc.get("id")
+            ouid = ord_doc.get("ui_id")
+            if oid:
+                order_ids.append(oid)
+            if ouid:
+                order_ui_ids.append(ouid)
+            for emb in (ord_doc.get("return_requests") or []):
+                if isinstance(emb, dict):
+                    emb_copy = dict(emb)
+                    if not emb_copy.get("order_id") and oid:
+                        emb_copy["order_id"] = oid
+                    if not emb_copy.get("order_ui_id") and ouid:
+                        emb_copy["order_ui_id"] = ouid
+                    if not emb_copy.get("shop_id") and ord_doc.get("shop_id"):
+                        emb_copy["shop_id"] = ord_doc["shop_id"]
+                    embedded_requests.append(emb_copy)
+
+        or_conds: List[Dict[str, Any]] = [
+            {"customer_id": user_id},
+            {"user_id": user_id},
+        ]
+        if order_ids:
+            or_conds.append({"order_id": {"$in": order_ids}})
+        if order_ui_ids:
+            or_conds.append({"order_ui_id": {"$in": order_ui_ids}})
+
+        try:
+            cursor = return_requests_collection.find({"$or": or_conds}, {"_id": 0}).sort("created_at", -1)
+            db_docs = await cursor.to_list(length=500)
+        except Exception as e:
+            ic(f"Error getting return requests by user_id: {e}")
+            db_docs = []
+
+        by_id: Dict[str, Dict[str, Any]] = {}
+        for doc in db_docs:
+            key = str(doc.get("id") or f"{doc.get('order_id')}:{doc.get('created_at')}")
+            by_id[key] = doc
+        for emb in embedded_requests:
+            key = str(emb.get("id") or f"{emb.get('order_id')}:{emb.get('created_at')}")
+            if key not in by_id:
+                by_id[key] = emb
+
+        merged = sorted(
+            by_id.values(),
+            key=lambda d: str(d.get("created_at") or ""),
+            reverse=True,
+        )
+        start = max(0, (offset - 1) * limit)
+        return merged[start : start + limit]
 
     @classmethod
     async def get_by_shop_id(
@@ -386,4 +529,75 @@ class ReturnRequestRepo:
                 ic(f"Error syncing return request status into order: {e}")
 
         updated_doc = await return_requests_collection.find_one({"id": request_id}, {"_id": 0})
-        return updated_doc or existing
+        result_doc = updated_doc or existing
+
+        # Dispatch notification to customer on return request status change
+        try:
+            old_status = str(existing.get("status") or "").upper()
+            if new_status and new_status != old_status:
+                order_id = result_doc.get("order_id") or existing.get("order_id") or ""
+                order_ui_id = result_doc.get("order_ui_id") or existing.get("order_ui_id") or order_id
+                shop_id = result_doc.get("shop_id") or existing.get("shop_id") or ""
+
+                # Resolve authenticated customer user_id
+                target_user_id = result_doc.get("user_id") or result_doc.get("customer_id") or ""
+                if order_id:
+                    try:
+                        ord_doc = await orders_collection.find_one(
+                            {"$or": [{"id": order_id}, {"ui_id": order_id}]},
+                            {"_id": 0, "user_id": 1, "online_details": 1, "additional_infos": 1, "customer_id": 1}
+                        )
+                        if ord_doc:
+                            online_d = ord_doc.get("online_details") or {}
+                            add_d = ord_doc.get("additional_infos") or {}
+                            resolved = (
+                                ord_doc.get("user_id")
+                                or online_d.get("user_id")
+                                or add_d.get("user_id")
+                                or ord_doc.get("customer_id")
+                            )
+                            if resolved:
+                                target_user_id = resolved
+                    except Exception:
+                        pass
+
+                if target_user_id:
+                    from integrations.notification_service import send_notification
+                    notes_suffix = f" Note: {data.admin_notes.strip()}" if data.admin_notes and data.admin_notes.strip() else ""
+                    if new_status == "ACCEPTED":
+                        title = "Return Request Accepted"
+                        msg = f"Your return request for Order #{order_ui_id} was accepted by the seller.{notes_suffix}"
+                        n_type = "success"
+                    elif new_status == "REJECTED":
+                        title = "Return Request Rejected"
+                        msg = f"Your return request for Order #{order_ui_id} was rejected.{notes_suffix}"
+                        n_type = "error"
+                    elif new_status == "COMPLETED":
+                        title = "Return Refund Completed"
+                        msg = f"Your return for Order #{order_ui_id} has been completed.{notes_suffix}"
+                        n_type = "success"
+                    else:
+                        title = "Return Request Updated"
+                        msg = f"Your return request for Order #{order_ui_id} status is now {new_status}.{notes_suffix}"
+                        n_type = "info"
+
+                    await send_notification(
+                        title=title,
+                        message=msg,
+                        notif_type=n_type,
+                        user_id=str(target_user_id),
+                        user_ids=[str(target_user_id)],
+                        additional_metadata={
+                            "event_type": "RETURN_REQUEST_STATUS",
+                            "audience": "customer",
+                            "shop_id": shop_id,
+                            "order_id": order_id,
+                            "order_ui_id": order_ui_id,
+                            "request_id": request_id,
+                            "status": new_status,
+                        },
+                    )
+        except Exception as ne:
+            ic(f"Failed sending return status notification: {ne}")
+
+        return result_doc

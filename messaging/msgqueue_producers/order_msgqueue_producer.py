@@ -190,11 +190,12 @@ class MessagingQueueOrderProducer:
                         has_batch = type_infos.get('has_batch', False)
                         has_serialno = type_infos.get('has_serialno', False)
                         
-                        # Set GST from product or shop registration
+                        # Always preserve the product's GST breakdown even if the shop itself isn't GST-registered;
+                        # registration status is tracked separately via calculation_infos['include_gst'].
                         product_gst = prod_db.get('gst') or prod_db.get('gst_rate') or prod_db.get('tax_rate') or '0%'
                         if isinstance(product_gst, (int, float)):
                             product_gst = f"{product_gst}%"
-                        gst = product_gst if shop_gst_registered else '0%'
+                        gst = product_gst
 
                         category_infos=prod_db.get('category_infos') or {}
                         unit_infos=prod_db.get('unit_infos') or {}
@@ -377,14 +378,74 @@ class MessagingQueueOrderProducer:
                                 }
                             )
 
-                if not calculation_infos.get("gst_amount"):
-                    calculation_infos["gst_amount"] = round(item_infos["total_order_gst_amount"], 2)
-                if not calculation_infos.get("taxable_amount"):
-                    calculation_infos["taxable_amount"] = round(sum(i["taxable_price"] * i["quantity"] for i in read_items if "taxable_price" in i), 2)
+                calc_taxable = round(sum(i.get("taxable_price", 0.0) * i.get("quantity", 1.0) for i in read_items), 2)
+                calc_gst = round(item_infos["total_order_gst_amount"], 2)
+                calc_items_subtotal = round(item_infos["total_order_amount"], 2)
+
+                if not isinstance(calculation_infos, dict):
+                    calculation_infos = {}
+
+                if "include_gst" not in calculation_infos:
+                    calculation_infos["include_gst"] = bool(shop_gst_registered)
+
+                # If caller omitted GST or sent 0 even though products have GST, backfill authoritative breakdown
+                if float(calculation_infos.get("gst_amount") or 0) <= 0 and calc_gst > 0:
+                    calculation_infos["gst_amount"] = calc_gst
+                    calculation_infos["taxable_amount"] = calc_taxable
+                    calculation_infos["base_subtotal"] = calc_taxable
+                    cgst_val = round(calc_gst / 2.0, 2)
+                    calculation_infos["cgst"] = cgst_val
+                    calculation_infos["sgst"] = round(calc_gst - cgst_val, 2)
+                else:
+                    if not calculation_infos.get("gst_amount"):
+                        calculation_infos["gst_amount"] = calc_gst
+                    if not calculation_infos.get("taxable_amount"):
+                        calculation_infos["taxable_amount"] = calc_taxable
+                    if not calculation_infos.get("base_subtotal"):
+                        calculation_infos["base_subtotal"] = calculation_infos["taxable_amount"]
+                    if calculation_infos.get("cgst") is None:
+                        cgst_val = round(float(calculation_infos["gst_amount"] or 0.0) / 2.0, 2)
+                        calculation_infos["cgst"] = cgst_val
+                        calculation_infos["sgst"] = round(float(calculation_infos["gst_amount"] or 0.0) - cgst_val, 2)
+
                 if not calculation_infos.get("subtotal"):
-                    calculation_infos["subtotal"] = round(item_infos["total_order_amount"], 2)
+                    calculation_infos["subtotal"] = calc_items_subtotal
                 if not calculation_infos.get("grand_total"):
-                    calculation_infos["grand_total"] = round(item_infos["total_order_amount"], 2)
+                    calculation_infos["grand_total"] = calc_items_subtotal
+
+                if not calculation_infos.get("items") and read_items:
+                    tax_groups_map: Dict[float, Dict[str, float]] = {}
+                    calc_items_list = []
+                    for ri in read_items:
+                        qty_val = float(ri.get("quantity") or 1.0)
+                        gst_pct = float(str(ri.get("gst") or "0").replace("%", "").strip() or 0.0)
+                        line_tax = round(float(ri.get("gst_amount") or 0.0) * qty_val, 2)
+                        line_taxable = round(float(ri.get("taxable_price") or 0.0) * qty_val, 2)
+                        line_cgst = round(line_tax / 2.0, 2)
+                        line_sgst = round(line_tax - line_cgst, 2)
+                        calc_items_list.append({
+                            "product_id": ri.get("product_id"),
+                            "order_item_id": ri.get("id"),
+                            "name": ri.get("name"),
+                            "qty": qty_val,
+                            "unit": (ri.get("unit_infos") or {}).get("name") or ri.get("entered_unit"),
+                            "price": ri.get("sell_price"),
+                            "gst_rate": gst_pct,
+                            "taxable_value": line_taxable,
+                            "gst_amount": line_tax,
+                            "cgst": line_cgst,
+                            "sgst": line_sgst,
+                            "final_inclusive": round(float(ri.get("total_amount") or 0.0), 2),
+                        })
+                        if gst_pct > 0:
+                            grp = tax_groups_map.setdefault(gst_pct, {"gstRate": gst_pct, "taxableValue": 0.0, "cgst": 0.0, "sgst": 0.0, "totalTax": 0.0})
+                            grp["taxableValue"] = round(grp["taxableValue"] + line_taxable, 2)
+                            grp["cgst"] = round(grp["cgst"] + line_cgst, 2)
+                            grp["sgst"] = round(grp["sgst"] + line_sgst, 2)
+                            grp["totalTax"] = round(grp["totalTax"] + line_tax, 2)
+                    calculation_infos["items"] = calc_items_list
+                    if not calculation_infos.get("tax_groups"):
+                        calculation_infos["tax_groups"] = list(tax_groups_map.values())
 
                 order_toadd=CreateOrderDbSchema(
                     id=order_id,

@@ -15,11 +15,12 @@ from infras.read_db.repos.order_repo import OrderReadDbRepo
 
 class HandleOrderRequest:
 
-    def __init__(self,session:AsyncSession,cur_user_id:str,shop_id:str,cur_user_info:Optional[dict]=None):
+    def __init__(self,session:AsyncSession,cur_user_id:str,shop_id:str,cur_user_info:Optional[dict]=None,request_origin:str=""):
         self.session=session
         self.cur_user_id=cur_user_id
         self.cur_user_info=cur_user_info or {}
         self.shop_id=shop_id
+        self.request_origin=request_origin or ""
 
         
     async def create(self, data: CreateOrderSchema):
@@ -63,7 +64,7 @@ class HandleOrderRequest:
         return await self.update(data=update_data)
 
     async def update(self,data:UpdateOrderStatusSchema):
-        res=await OrdersService(session=self.session).update(data=data, executing_user_id=self.cur_user_id, executing_user_info=self.cur_user_info)
+        res=await OrdersService(session=self.session).update(data=data, executing_user_id=self.cur_user_id, executing_user_info=self.cur_user_info, request_origin=self.request_origin)
         if not res:
             raise HTTPException(
                     status_code=400,
