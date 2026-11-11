@@ -314,7 +314,17 @@ class MessagingQueueOrderProducer:
                             item_infos['total_order_gst_amount'] += total_item_gst
                             ic(item_infos)
 
-                            buy_price = float(pricing_infos.get('buy_price', 0))
+                            raw_buy_price = float(pricing_infos.get('cost_to_make') or pricing_infos.get('buy_price') or 0.0)
+                            is_untracked = prod_db.get('have_tracking') is False
+                            try:
+                                prod_gst_pct = float(str(product_gst).replace('%', '').strip())
+                            except ValueError:
+                                prod_gst_pct = 0.0
+                            cost_gst_rate = gst_rate if gst_rate > 0 else (prod_gst_pct / 100.0)
+                            if is_untracked and raw_buy_price > 0 and cost_gst_rate > 0:
+                                buy_price = round(raw_buy_price + round(raw_buy_price * cost_gst_rate, 2), 2)
+                            else:
+                                buy_price = raw_buy_price
                             item_infos['total_order_cost'] += (buy_price*stocks)
 
                             order_item_id = generate_uuid()
@@ -326,7 +336,7 @@ class MessagingQueueOrderProducer:
                                 batch_id=batch_infos.get('id', batch_id),
                                 serialno_infos=itm.get('serialno_infos') or [],
                                 gst=gst,
-                                buy_price=pricing_infos.get('buy_price', 0.0),
+                                buy_price=buy_price,
                                 sell_price=inclusive_unit_price,
                                 quantity=stocks,
                                 entered_qty=itm.get('entered_qty'),
@@ -350,7 +360,8 @@ class MessagingQueueOrderProducer:
                                         "mfg_date":batch_infos.get("manufacturing_date")
                                     } if batch_id else None,
                                     "serialno_infos": itm['serialno_infos'] if itm['serialno_infos'] else None,
-                                    "buy_price": pricing_infos.get('buy_price', 0.0),
+                                    "raw_buy_price": raw_buy_price,
+                                    "buy_price": buy_price,
                                     "sell_price": inclusive_unit_price,
                                     "taxable_price": taxable_unit,
                                     "gst_amount": gst_amount,
