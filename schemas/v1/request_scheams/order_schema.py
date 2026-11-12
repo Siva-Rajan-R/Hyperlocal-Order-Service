@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 from core.data_formats.enums.order_enum import OrderStatusEnum,OrderOriginEnum,OrderReturnTypeEnum,OrderPaymentEnums
 from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
-from typing import Optional,List,Dict
+from typing import Optional,List,Dict,Any
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 
 class OrderCustomerSchema(BaseModel):
@@ -293,12 +293,21 @@ class CreateExchangeSchema(BaseModel):
     replacement_items: List[ReplacementItemSchema]  # items customer is taking instead
 
 
+class OrderItemSerialAssignmentSchema(BaseModel):
+    order_item_id: Optional[str] = None
+    product_id: str
+    variant_id: Optional[str] = None
+    batch_id: Optional[str] = None
+    serialno_infos: List[Any] = []
+
+
 class UpdateOrderStatusSchema(BaseModel):
     id: str
     shop_id: str
     status: Optional[OrderStatusEnum] = None
     payment_infos: Optional[dict] = None
     additional_infos: Optional[dict] = None
+    serial_assignments: Optional[List[OrderItemSerialAssignmentSchema]] = None
 
     @field_validator("status", mode="before")
     @classmethod

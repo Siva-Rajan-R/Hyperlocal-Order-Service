@@ -176,6 +176,142 @@ class OrdersService:
         }
     
 
+    async def _consume_and_assign_accept_serials(self, data: UpdateOrderStatusSchema, order_items: list):
+        """Validate and consume serial numbers via Inventory Service when accepting an order."""
+        import os
+
+        inv_base_url = os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8004")
+        assignments = data.serial_assignments or []
+
+        def _norm_serials(raw_list: list) -> list[str]:
+            out: list[str] = []
+            for entry in raw_list or []:
+                if isinstance(entry, dict):
+                    val = entry.get("id") or entry.get("name") or entry.get("serial") or entry.get("serial_no")
+                else:
+                    val = entry
+                if val is not None and str(val).strip():
+                    out.append(str(val).strip())
+            return out
+
+        def _extract_item(itm) -> dict:
+            if isinstance(itm, dict):
+                return itm
+            return dict(itm._mapping) if hasattr(itm, "_mapping") else dict(itm)
+
+        normalized_items = [_extract_item(i) for i in (order_items or [])]
+
+        # Match incoming assignments to specific order_items
+        by_item_id: dict[str, list[str]] = {}
+        by_key: dict[tuple, list[str]] = {}
+        for a in assignments:
+            serial_vals = _norm_serials(a.serialno_infos)
+            if not serial_vals:
+                continue
+            if a.order_item_id:
+                by_item_id[str(a.order_item_id)] = serial_vals
+            else:
+                key = (str(a.product_id), str(a.variant_id or ""), str(a.batch_id or ""))
+                by_key[key] = serial_vals
+
+        items_missing_serials = [
+            itm for itm in normalized_items
+            if not (itm.get("serialno_infos") and len(itm.get("serialno_infos") or []) > 0)
+        ]
+
+        # Check Inventory Service to enforce serial selection for any serial-tracked product
+        serial_product_ids: set[str] = set()
+        if items_missing_serials:
+            prod_ids = list({str(i.get("product_id")) for i in items_missing_serials if i.get("product_id")})
+            if prod_ids:
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        inv_resp = await client.post(
+                            f"{inv_base_url}/inventories/by/ids",
+                            json={"shop_id": data.shop_id, "id": prod_ids, "include_serialno": False},
+                        )
+                        if inv_resp.status_code == 200:
+                            inv_payload = inv_resp.json()
+                            inv_list = inv_payload.get("data") if isinstance(inv_payload, dict) else inv_payload
+                            for p in (inv_list or []):
+                                if isinstance(p, dict) and (p.get("type_infos") or {}).get("has_serialno"):
+                                    if p.get("id"):
+                                        serial_product_ids.add(str(p.get("id")))
+                except Exception as exc:
+                    ic(f"Could not verify product serial tracking before accept: {exc}")
+
+        consume_payload_items = []
+        matched_item_ids: list[str] = []
+
+        for itm in normalized_items:
+            existing_serials = itm.get("serialno_infos") or []
+            if existing_serials:
+                continue
+
+            item_id = str(itm.get("id") or "")
+            prod_id = str(itm.get("product_id") or "")
+            var_id = itm.get("variant_id")
+            batch_id = itm.get("batch_id")
+            qty = int(round(float(itm.get("quantity") or 0)))
+
+            chosen = by_item_id.get(item_id)
+            if chosen is None:
+                chosen = by_key.get((prod_id, str(var_id or ""), str(batch_id or "")))
+
+            if prod_id in serial_product_ids or chosen is not None:
+                if not chosen or len(chosen) != qty:
+                    item_name = itm.get("name") or prod_id
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Please select {qty} serial number(s) for '{item_name}' before accepting the order.",
+                    )
+                consume_payload_items.append({
+                    "order_item_id": item_id or None,
+                    "product_id": prod_id,
+                    "variant_id": var_id,
+                    "batch_id": batch_id,
+                    "serials": chosen,
+                })
+                matched_item_ids.append(item_id)
+
+        if not consume_payload_items:
+            return
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    f"{inv_base_url}/inventories/serials/consume",
+                    json={"shop_id": data.shop_id, "items": consume_payload_items},
+                )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Failed to contact inventory service to assign serials: {exc}")
+
+        if resp.status_code != 200:
+            err_msg = "Failed to assign serial numbers"
+            try:
+                err_body = resp.json()
+                detail = err_body.get("detail", err_body)
+                if isinstance(detail, dict):
+                    err_msg = detail.get("msg") or detail.get("description") or err_msg
+                elif isinstance(detail, str):
+                    err_msg = detail
+            except Exception:
+                pass
+            raise HTTPException(status_code=resp.status_code if 400 <= resp.status_code < 500 else 400, detail=err_msg)
+
+        resp_data = resp.json()
+        assigned_items = resp_data.get("assigned_items") or []
+        order_repo = OrdersRepo(session=self.session)
+        for idx, assigned in enumerate(assigned_items):
+            target_item_id = assigned.get("order_item_id") or (matched_item_ids[idx] if idx < len(matched_item_ids) else None)
+            if target_item_id:
+                await order_repo.assign_order_item_serials(
+                    order_id=data.id,
+                    item_id=str(target_item_id),
+                    serialno_infos=assigned.get("serialno_infos") or [],
+                )
+
+
     async def update(self, data: UpdateOrderStatusSchema, executing_user_id: Optional[str] = None, executing_user_info: Optional[dict] = None, request_origin: str = ""):
         # 1. Resolve executing user information
         u_info = executing_user_info or {}
@@ -290,9 +426,20 @@ class OrdersService:
 
         data.additional_infos = existing_add
 
+        if new_status in ("ACCEPTED", "ACCEPT") and old_status not in ("ACCEPTED", "ACCEPT"):
+            await self._consume_and_assign_accept_serials(
+                data=data,
+                order_items=old_order_dict.get("items") or [],
+            )
+
         from schemas.v1.db_schemas.order_schema import UpdateOrderDbSchema
         repo_data = UpdateOrderDbSchema(
-            **data.model_dump(mode='json', exclude_unset=True, exclude_none=True)
+            **data.model_dump(
+                mode='json',
+                exclude_unset=True,
+                exclude_none=True,
+                exclude={'serial_assignments'},
+            )
         )
         res = await OrdersRepo(session=self.session).update(data=repo_data)
         if res:

@@ -461,6 +461,18 @@ class OrdersRepo(BaseRepoModel):
 
         is_updated=(await self.session.execute(order_sts_toupdate)).scalar_one_or_none()
         return is_updated
+
+    async def assign_order_item_serials(self, order_id: str, item_id: str, serialno_infos: list):
+        stmt = (
+            update(OrderItems)
+            .where(
+                OrderItems.id == item_id,
+                OrderItems.order_id == order_id,
+            )
+            .values(serialno_infos=serialno_infos)
+            .returning(OrderItems.id)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
     
 
     @start_db_transaction

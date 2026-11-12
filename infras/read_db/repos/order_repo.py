@@ -373,7 +373,7 @@ class OrderReadDbRepo:
                     if item_id in pg_items_map:
                         merged = dict(existing_item)
                         pg_item = pg_items_map[item_id]
-                        for pg_key in ["status", "returned_quantity", "exchanged_quantity", "entered_qty", "entered_unit"]:
+                        for pg_key in ["status", "returned_quantity", "exchanged_quantity", "entered_qty", "entered_unit", "serialno_infos"]:
                             if pg_item.get(pg_key) is not None:
                                 merged[pg_key] = pg_item[pg_key]
                         merged_items.append(merged)
