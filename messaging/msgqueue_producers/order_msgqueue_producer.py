@@ -576,7 +576,7 @@ class MessagingQueueOrderProducer:
                         or order_payload.get("delivery_charge")
                         or 0.0
                     ),
-                    "total_quantity": float(item_infos.get("total_order_qty") or sum(float(i.get("quantity", 1)) for i in read_items) or 1.0),
+                    "total_quantity": float(sum(float(i.get("quantity", 1)) for i in read_items) if read_items else (item_infos.get("total_order_qty") or 1.0)),
                     "calculation_infos": calculation_infos or {},
                     "charges_infos": charges_infos or {},
                     "item_infos": item_infos or {},

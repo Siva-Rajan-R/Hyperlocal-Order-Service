@@ -686,6 +686,9 @@ class OrdersRepo(BaseRepoModel):
                         for item in exch.items
                     ]
                 })
+            response["item_infos"] = order.item_infos or {}
+            items_qty_sum = sum(float(item.quantity or 1.0) for item in order.items) if order.items else 0.0
+            response["total_quantity"] = float(items_qty_sum or (order.item_infos or {}).get("total_order_qty") or 1.0)
             responses.append(response)
 
         return responses
@@ -738,6 +741,8 @@ class OrdersRepo(BaseRepoModel):
             "origin": order.origin,
             "calculation_infos": order.calculation_infos,
             "charges_infos": order.charges_infos,
+            "item_infos": order.item_infos or {},
+            "total_quantity": float(sum(float(item.quantity or 1.0) for item in order.items) if order.items else (order.item_infos or {}).get("total_order_qty") or 1.0),
             "payment_infos": (
                 {k: v for p in order.payment_infos if isinstance(p, dict) for k, v in p.items()}
                 if isinstance(order.payment_infos, list)
