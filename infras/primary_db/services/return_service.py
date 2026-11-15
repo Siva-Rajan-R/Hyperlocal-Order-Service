@@ -56,15 +56,16 @@ def resolve_item_gst_rate(
     # 1. Try from calculation_infos['items']
     product_id = item_dict.get('product_id')
     variant_id = item_dict.get('variant_id')
+    item_id = item_dict.get('id') or item_dict.get('order_item_id')
 
     for ci in (calc.get('items') or []):
         if not isinstance(ci, dict):
             continue
-        if ci.get('product_id') == product_id:
+        if (item_id and (ci.get('order_item_id') == item_id or ci.get('id') == item_id)) or ci.get('product_id') == product_id:
             if variant_id and ci.get('variant_id'):
                 if ci.get('variant_id') != variant_id:
                     continue
-            ci_gst = parse_gst_rate(ci.get('gst'))
+            ci_gst = parse_gst_rate(ci.get('gst') or ci.get('gst_rate'))
             if ci_gst > 0:
                 return ci_gst
 
@@ -79,7 +80,7 @@ def resolve_item_gst_rate(
         item_id = item_dict.get('id')
         for rd_itm in (read_db_order.get('items') or []):
             if rd_itm.get('id') == item_id:
-                rd_gst = parse_gst_rate(rd_itm.get('gst'))
+                rd_gst = parse_gst_rate(rd_itm.get('gst') or rd_itm.get('gst_rate'))
                 if rd_gst > 0:
                     return rd_gst
                 break
@@ -89,6 +90,9 @@ def resolve_item_gst_rate(
     if gst_amount > 0 and subtotal > 0:
         return gst_amount / subtotal
 
+    return 0.0
+
+
 def resolve_item_unit_price(
     item_dict: dict,
     calculation_infos: Optional[dict] = None,
@@ -97,36 +101,96 @@ def resolve_item_unit_price(
     calc = calculation_infos or (read_db_order.get('calculation_infos') if read_db_order else {}) or {}
     product_id = item_dict.get('product_id')
     variant_id = item_dict.get('variant_id')
-    item_id = item_dict.get('id')
+    batch_id = item_dict.get('batch_id')
+    item_id = item_dict.get('id') or item_dict.get('order_item_id')
+
+    # Determine base quantity of the item in base unit
+    base_qty = float(item_dict.get('quantity') or 0.0)
+    if base_qty <= 0 and read_db_order:
+        for rd_itm in (read_db_order.get('items') or []):
+            if (item_id and (rd_itm.get('id') == item_id or rd_itm.get('order_item_id') == item_id)) or (rd_itm.get('product_id') == product_id):
+                base_qty = float(rd_itm.get('quantity') or 0.0)
+                if base_qty > 0:
+                    break
 
     # 1. Search in calculation_infos['items']
-    for ci in (calc.get('items') or []):
-        if not isinstance(ci, dict):
-            continue
-        if ci.get('product_id') == product_id or ci.get('order_item_id') == item_id or ci.get('id') == item_id:
-            if variant_id and ci.get('variant_id') and ci.get('variant_id') != variant_id:
+    matched_ci = None
+    # Pass 1: exact match by item_id
+    if item_id:
+        for ci in (calc.get('items') or []):
+            if not isinstance(ci, dict):
                 continue
-            qty = float(ci.get('qty') or item_dict.get('quantity') or 1.0)
-            if ci.get('final_inclusive') is not None and qty > 0:
-                return float(ci['final_inclusive']) / qty
-            elif ci.get('price') is not None:
-                orig_sp = float(ci['price'])
-                disc = float(ci.get('product_discount_amount') or 0.0) + float(ci.get('line_discount_amount') or 0.0) + float(ci.get('bill_discount_share') or 0.0)
-                if qty > 0:
-                    return max(0.0, (orig_sp * qty - disc) / qty)
+            if ci.get('order_item_id') == item_id or ci.get('id') == item_id:
+                matched_ci = ci
+                break
+
+    # Pass 2: match by product_id (+ variant_id / batch_id)
+    if not matched_ci:
+        for ci in (calc.get('items') or []):
+            if not isinstance(ci, dict):
+                continue
+            if ci.get('product_id') == product_id or ci.get('inventory_id') == product_id:
+                if variant_id and ci.get('variant_id') and ci.get('variant_id') != variant_id:
+                    continue
+                if batch_id and ci.get('batch_id') and ci.get('batch_id') != batch_id:
+                    continue
+                matched_ci = ci
+                break
+
+    if matched_ci:
+        ci = matched_ci
+        # Determine effective base quantity for this line item
+        effective_base_qty = base_qty
+        if effective_base_qty <= 0:
+            unit_infos = item_dict.get("unit_infos") or {}
+            if not unit_infos and read_db_order:
+                for rd_itm in (read_db_order.get('items') or []):
+                    if (item_id and rd_itm.get('id') == item_id) or rd_itm.get('product_id') == product_id:
+                        unit_infos = rd_itm.get("unit_infos") or {}
+                        if unit_infos:
+                            break
+            base_unit_name = unit_infos.get("name", "")
+            sub_units = unit_infos.get("sub_units", []) or []
+            ci_unit = ci.get("entered_unit") or ci.get("unit") or ""
+            factor = 1.0
+            if ci_unit and base_unit_name and ci_unit.lower() != base_unit_name.lower():
+                matched_sub = next((su for su in sub_units if su and su.get("name", "").lower() == ci_unit.lower()), None)
+                if matched_sub:
+                    factor = float(matched_sub.get("factor", 1.0))
+            ci_raw_qty = float(ci.get('entered_qty') or ci.get('qty') or ci.get('quantity') or 1.0)
+            effective_base_qty = ci_raw_qty * factor
+
+        if effective_base_qty <= 0:
+            effective_base_qty = 1.0
+
+        if ci.get('final_inclusive') is not None:
+            return float(ci['final_inclusive']) / effective_base_qty
+        elif ci.get('final_amount') is not None:
+            return float(ci['final_amount']) / effective_base_qty
+        elif ci.get('price') is not None:
+            orig_sp = float(ci['price'])
+            ci_qty = float(ci.get('entered_qty') or ci.get('qty') or ci.get('quantity') or effective_base_qty)
+            disc = (
+                float(ci.get('product_discount_amount') or 0.0) +
+                float(ci.get('line_discount_amount') or 0.0) +
+                float(ci.get('bill_discount_share') or 0.0) +
+                float(ci.get('discount_amount') or 0.0)
+            )
+            orig_total = orig_sp * ci_qty
+            return max(0.0, (orig_total - disc) / effective_base_qty)
 
     # 2. Check total_amount from item_dict
     total_amt = item_dict.get('total_amount')
-    qty = float(item_dict.get('quantity') or 1.0)
+    qty = float(item_dict.get('quantity') or base_qty or 1.0)
     if total_amt is not None and float(total_amt) > 0 and qty > 0:
         return float(total_amt) / qty
 
     # 3. Check read_db_order items
     if read_db_order:
         for rd_itm in (read_db_order.get('items') or []):
-            if rd_itm.get('id') == item_id or rd_itm.get('product_id') == product_id:
+            if (item_id and rd_itm.get('id') == item_id) or rd_itm.get('product_id') == product_id:
                 rd_total = rd_itm.get('total_amount')
-                rd_qty = float(rd_itm.get('quantity') or 1.0)
+                rd_qty = float(rd_itm.get('quantity') or base_qty or 1.0)
                 if rd_total is not None and float(rd_total) > 0 and rd_qty > 0:
                     return float(rd_total) / rd_qty
 
@@ -247,6 +311,19 @@ class ReturnService:
                 original_qty = float(items_map[inc_item_id].get('quantity') or 0.0)
                 returned_qty = float(items_map[inc_item_id].get('returned_quantity') or 0.0)
                 exchanged_qty = float(items_map[inc_item_id].get('exchanged_quantity') or 0.0)
+
+                if read_db_order:
+                    if returned_qty <= 0:
+                        for ret in (read_db_order.get("returns") or []):
+                            for r_item in (ret.get("items") or []):
+                                if r_item.get("order_item_id") == inc_item_id:
+                                    returned_qty += float(r_item.get("quantity") or 0.0)
+                    if exchanged_qty <= 0:
+                        for exc in (read_db_order.get("exchanges") or []):
+                            for e_item in (exc.get("items") or []):
+                                if e_item.get("order_item_id") == inc_item_id:
+                                    exchanged_qty += float(e_item.get("quantity") or 0.0)
+
                 already_consumed = returned_qty + exchanged_qty
 
                 unit_infos = items_map[inc_item_id].get("unit_infos") or {}
@@ -279,7 +356,7 @@ class ReturnService:
 
                 delta = original_qty - already_consumed - inc_quantity
                 ic(delta)
-                if delta < 0:
+                if round(delta, 4) < 0:
                     ic("Invalid order qty")
                     raise HTTPException(
                         status_code=400,
