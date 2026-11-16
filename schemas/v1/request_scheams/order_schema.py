@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 from core.data_formats.enums.order_enum import OrderStatusEnum,OrderOriginEnum,OrderReturnTypeEnum,OrderPaymentEnums
 from core.data_formats.typ_dicts.order_typdict import OrderItemValueTypDict
-from typing import Optional,List,Dict,Any
+from typing import Optional,List,Dict,Any,Union
 from hyperlocal_platform.core.enums.timezone_enum import TimeZoneEnum
 
 class OrderCustomerSchema(BaseModel):
@@ -27,7 +27,7 @@ class CreateOrderSchema(BaseModel):
     type: Optional[str] = None
     calculation_infos: dict = {}
     charges_infos: dict = {}
-    payment_infos: dict = {}
+    payment_infos: Union[dict, list] = {}
     additional_infos: Optional[dict] = None
     
     # Optional fields for online order user info

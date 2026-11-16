@@ -31,6 +31,50 @@ class OrdersService:
     def __init__(self,session:AsyncSession):
          self.session=session
     async def create(self, data: CreateOrderSchema, executing_user_id: Optional[str] = None):
+        # ── Validate that sum of payment_infos does not exceed grand_total / total_amount ──
+        total_paid = 0.0
+        if isinstance(data.payment_infos, dict):
+            for v in data.payment_infos.values():
+                try:
+                    total_paid += float(v)
+                except (ValueError, TypeError):
+                    pass
+        elif isinstance(data.payment_infos, list):
+            for item in data.payment_infos:
+                if isinstance(item, dict):
+                    v = item.get("amount", item.get("value", 0))
+                    try:
+                        total_paid += float(v)
+                    except (ValueError, TypeError):
+                        pass
+
+        bill_total = None
+        if isinstance(data.calculation_infos, dict) and data.calculation_infos:
+            for k in ("grand_total", "total", "total_amount", "payable", "total_sellprice"):
+                val = data.calculation_infos.get(k)
+                if val is not None:
+                    try:
+                        bill_total = float(val)
+                        break
+                    except (ValueError, TypeError):
+                        pass
+
+        if bill_total is None:
+            for k in ("grand_total", "total_amount", "total"):
+                val = getattr(data, k, None)
+                if val is not None:
+                    try:
+                        bill_total = float(val)
+                        break
+                    except (ValueError, TypeError):
+                        pass
+
+        if bill_total is not None and round(total_paid, 2) > (round(bill_total, 2) + 0.01):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Total paid amount (₹{total_paid:,.2f}) cannot exceed the bill amount (₹{bill_total:,.2f})."
+            )
+
         cart = OrderCartCacheModel(data.session_id)
         cart_data = await cart.get_cart()
         ic(cart_data)
