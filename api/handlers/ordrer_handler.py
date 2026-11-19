@@ -256,8 +256,9 @@ class HandleOrderRequest:
 
     async def getby_user_id(self, user_id: str, limit: int = 10, offset: int = 1):
         res = await OrderReadDbRepo.get_by_user_id(user_id=user_id, limit=limit, offset=offset)
-        if not res or not res.get("datas"):
-            # Fallback to PG
+        # Only fallback to PostgreSQL if MongoDB query itself failed (res is None)
+        # If MongoDB returned {"datas": []}, it means the user has 0 orders (or orders were soft-deleted)
+        if res is None:
             from infras.primary_db.models.order_model import OnlineOrderModel
             from sqlalchemy import select
             stmt = select(OnlineOrderModel.order_id).where(OnlineOrderModel.user_id == user_id)
@@ -265,6 +266,8 @@ class HandleOrderRequest:
             if order_ids:
                 res_bulk = await OrderReadDbRepo.get_bulk_orders_without_shop(order_ids=order_ids)
                 res = {"datas": res_bulk}
+            else:
+                res = {"datas": []}
                 
         if res and res.get("datas"):
             from infras.read_db.repos.delivery_code_repo import DeliveryCodeRepo

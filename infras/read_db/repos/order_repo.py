@@ -475,6 +475,13 @@ class OrderReadDbRepo:
         if cname:
             doc["customer_name"] = str(cname)
 
+        # Mark deleted user label for retailer view while preserving order records
+        if online.get("user_deleted") is True or doc.get("user_deleted") is True:
+            doc["user_deleted"] = True
+            curr_cname = doc.get("customer_name") or "Customer"
+            if "(Deleted User)" not in str(curr_cname):
+                doc["customer_name"] = f"{curr_cname} (Deleted User)"
+
         if not doc.get("customer"):
             if cid or cname:
                 doc["customer"] = {
@@ -684,21 +691,29 @@ class OrderReadDbRepo:
             return []
 
     @classmethod
-    async def get_by_user_id(cls, user_id: str, limit: int = 10, offset: int = 1) -> dict:
+    async def get_by_user_id(cls, user_id: str, limit: int = 10, offset: int = 1) -> Optional[dict]:
         try:
             skip = (offset - 1) * limit
-            query = {"online_details.user_id": user_id}
+            query = {
+                "online_details.user_id": user_id,
+                "online_details.user_deleted": {"$ne": True},
+                "user_deleted": {"$ne": True}
+            }
             cursor = ORDERS_COLLECTION.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit)
             orders = await cursor.to_list(length=limit)
             return {"datas": orders}
         except Exception as e:
             ic(f"Error in get_by_user_id: {e}")
-            return {"datas": []}
+            return None
 
     @classmethod
     async def get_bulk_orders_without_shop(cls, order_ids: List[str]) -> List[dict]:
         try:
-            cursor = ORDERS_COLLECTION.find({"id": {"$in": order_ids}}, {"_id": 0})
+            cursor = ORDERS_COLLECTION.find({
+                "id": {"$in": order_ids},
+                "online_details.user_deleted": {"$ne": True},
+                "user_deleted": {"$ne": True}
+            }, {"_id": 0})
             return await cursor.to_list(length=len(order_ids))
         except Exception as e:
             ic(f"Error in get_bulk_orders_without_shop: {e}")
