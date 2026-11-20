@@ -166,6 +166,11 @@ def is_exclude_non_return(data) -> bool:
         'exclude_no_returns', 'exclude_without_return', 'exclude_without_returns'
     ))
 
+def is_returns_only(data) -> bool:
+    return _check_filter(data, (
+        'returns_only', 'return_only', 'only_returns', 'only_return'
+    ))
+
 def is_exclude_accepted(data) -> bool:
     return _check_filter(data, ('exclude_accepted', 'exclude_accept'))
 
@@ -257,10 +262,18 @@ class OrdersRepo(BaseRepoModel):
                 )
             )
 
+        origin_is_return = False
         if hasattr(data, 'origin') and getattr(data, 'origin'):
             origin_val = str(data.origin).strip().lower()
             if origin_val == "online":
                 conds.append(or_(func.lower(Orders.origin) == "online", Orders.id.in_(select(OnlineOrderModel.order_id))))
+            elif origin_val in ("offline_sales_return", "sales_return", "return", "returns", "returned", "offline_return"):
+                origin_is_return = True
+                conds.append(or_(
+                    Orders.id.in_(select(Returns.order_id)),
+                    func.lower(Orders.origin).like("%return%"),
+                    func.lower(Orders.status) == "returned"
+                ))
             else:
                 conds.append(func.lower(Orders.origin) == origin_val)
         if hasattr(data, 'payment_method') and getattr(data, 'payment_method'):
@@ -287,14 +300,22 @@ class OrdersRepo(BaseRepoModel):
 
         # Exclusion filters for returns
         ex_ret = is_exclude_return(data)
-        ex_non_ret = is_exclude_non_return(data)
+        ex_non_ret = is_exclude_non_return(data) or is_returns_only(data) or origin_is_return
 
         if ex_ret and ex_non_ret:
             conds.append(text("1=0"))
         elif ex_ret:
-            conds.append(Orders.id.not_in(select(Returns.order_id)))
-        elif ex_non_ret:
-            conds.append(Orders.id.in_(select(Returns.order_id)))
+            conds.append(and_(
+                Orders.id.not_in(select(Returns.order_id)),
+                func.lower(Orders.origin).not_like("%return%"),
+                func.lower(Orders.status) != "returned"
+            ))
+        elif (is_exclude_non_return(data) or is_returns_only(data)) and not origin_is_return:
+            conds.append(or_(
+                Orders.id.in_(select(Returns.order_id)),
+                func.lower(Orders.origin).like("%return%"),
+                func.lower(Orders.status) == "returned"
+            ))
 
         # Timezone-aware date range filtering
         tz_str = "Asia/Kolkata"

@@ -101,6 +101,10 @@ class GetAllOrderSchema(BaseModel):
     exclude_no_returns:Optional[bool]=None
     exclude_without_return:Optional[bool]=None
     exclude_without_returns:Optional[bool]=None
+    returns_only:Optional[bool]=None
+    return_only:Optional[bool]=None
+    only_returns:Optional[bool]=None
+    only_return:Optional[bool]=None
     exclude_accepted:Optional[bool]=None
     exclude_accept:Optional[bool]=None
     exclude_pending:Optional[bool]=None
@@ -151,6 +155,10 @@ class GetOrderByShopIdSchema(BaseModel):
     exclude_no_returns:Optional[bool]=None
     exclude_without_return:Optional[bool]=None
     exclude_without_returns:Optional[bool]=None
+    returns_only:Optional[bool]=None
+    return_only:Optional[bool]=None
+    only_returns:Optional[bool]=None
+    only_return:Optional[bool]=None
     exclude_accepted:Optional[bool]=None
     exclude_accept:Optional[bool]=None
     exclude_pending:Optional[bool]=None
@@ -202,6 +210,10 @@ class GetOrderByCustomerIdSchema(BaseModel):
     exclude_no_returns:Optional[bool]=None
     exclude_without_return:Optional[bool]=None
     exclude_without_returns:Optional[bool]=None
+    returns_only:Optional[bool]=None
+    return_only:Optional[bool]=None
+    only_returns:Optional[bool]=None
+    only_return:Optional[bool]=None
     exclude_accepted:Optional[bool]=None
     exclude_accept:Optional[bool]=None
     exclude_pending:Optional[bool]=None

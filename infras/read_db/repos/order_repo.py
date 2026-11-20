@@ -37,6 +37,11 @@ def is_exclude_non_return(data) -> bool:
         'exclude_no_returns', 'exclude_without_return', 'exclude_without_returns'
     ))
 
+def is_returns_only(data) -> bool:
+    return _check_filter(data, (
+        'returns_only', 'return_only', 'only_returns', 'only_return'
+    ))
+
 def is_exclude_accepted(data) -> bool:
     return _check_filter(data, ('exclude_accepted', 'exclude_accept'))
 
@@ -156,6 +161,7 @@ class OrderReadDbRepo:
 
         # --- origin ---
         origin = getattr(data, "origin", None)
+        origin_is_return = False
         if origin:
             origin_val = str(origin.value if hasattr(origin, "value") else origin).strip().upper()
             if origin_val == "ONLINE":
@@ -172,6 +178,17 @@ class OrderReadDbRepo:
                         {"online_details": {"$exists": False}},
                         {"online_details": None},
                         {"online_details": {}}
+                    ]
+                })
+            elif origin_val in ("OFFLINE_SALES_RETURN", "SALES_RETURN", "RETURN", "RETURNS", "RETURNED", "OFFLINE_RETURN"):
+                origin_is_return = True
+                and_clauses.append({
+                    "$or": [
+                        {"origin": re.compile(r"return", re.IGNORECASE)},
+                        {"returns": {"$exists": True, "$ne": None, "$ne": []}},
+                        {"returns.0": {"$exists": True}},
+                        {"items.returned_quantity": {"$gt": 0}},
+                        {"status": re.compile(r"^returned$", re.IGNORECASE)}
                     ]
                 })
             else:
@@ -202,24 +219,33 @@ class OrderReadDbRepo:
 
         # --- exclude_return / exclude_non_return ---
         ex_ret = is_exclude_return(data)
-        ex_non_ret = is_exclude_non_return(data)
+        ex_non_ret = is_exclude_non_return(data) or is_returns_only(data) or origin_is_return
 
         if ex_ret and ex_non_ret:
             and_clauses.append({"_id": {"$exists": False}})  # Contradiction: match none
         elif ex_ret:
             and_clauses.append({
-                "$or": [
-                    {"returns": {"$exists": False}},
-                    {"returns": None},
-                    {"returns": {"$size": 0}},
-                    {"returns": []}
+                "$and": [
+                    {"returns.0": {"$exists": False}},
+                    {"$or": [
+                        {"returns": {"$exists": False}},
+                        {"returns": None},
+                        {"returns": {"$size": 0}},
+                        {"returns": []}
+                    ]},
+                    {"items.returned_quantity": {"$not": {"$gt": 0}}},
+                    {"origin": {"$not": re.compile(r"return", re.IGNORECASE)}},
+                    {"status": {"$not": re.compile(r"^returned$", re.IGNORECASE)}}
                 ]
             })
-        elif ex_non_ret:
+        elif (is_exclude_non_return(data) or is_returns_only(data)) and not origin_is_return:
             and_clauses.append({
-                "$and": [
+                "$or": [
+                    {"origin": re.compile(r"return", re.IGNORECASE)},
                     {"returns": {"$exists": True, "$ne": None, "$ne": []}},
-                    {"returns.0": {"$exists": True}}
+                    {"returns.0": {"$exists": True}},
+                    {"items.returned_quantity": {"$gt": 0}},
+                    {"status": re.compile(r"^returned$", re.IGNORECASE)}
                 ]
             })
 
